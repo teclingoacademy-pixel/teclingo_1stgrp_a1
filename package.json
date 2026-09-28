@@ -13,10 +13,18 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "postinstall": "prisma skills sync || exit 0"
-  },
-  "prisma": {
-    "seed": "tsx prisma/seed-a1-oficial.ts"
+    "postinstall": "prisma skills sync || exit 0",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "db:logs": "docker compose logs -f postgres",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:deploy": "prisma migrate deploy",
+    "db:status": "prisma migrate status",
+    "db:seed": "prisma db seed",
+    "db:studio": "prisma studio",
+    "db:reset": "prisma migrate reset",
+    "db:verify": "tsx scripts/verify-db.ts"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
