@@ -25,7 +25,7 @@ export const VocabularyCard: React.FC<VocabularyCardProps> = ({
 }) => {
   const handleTriggerAudio = () => {
     if (onPlay) onPlay(word);
-    else playAudio(word);
+    else playAudio(word, { forceLang: 'en-US' });
   };
 
   return (
@@ -134,7 +134,7 @@ export const VocabularyTable: React.FC<VocabularyTableProps> = ({
                       type="button"
                       onClick={() => {
                         if (onPlay) onPlay(item.word);
-                        else playAudio(item.word);
+                        else playAudio(item.word, { forceLang: 'en-US' });
                       }}
                       className={`rounded-full p-2 transition-all shadow-sm hover:shadow-md cursor-pointer inline-flex items-center justify-center ${
                         isPlaying
@@ -170,7 +170,7 @@ export const VocabularySection: React.FC<VocabularySectionProps> = ({
 
   const handlePlayWord = (word: string) => {
     setPlayingWord(word);
-    playAudio(word, {
+    playAudio(word, { forceLang: 'en-US',
       onEnd: () => setPlayingWord((prev) => (prev === word ? null : prev)),
       onError: () => setPlayingWord((prev) => (prev === word ? null : prev)),
     });

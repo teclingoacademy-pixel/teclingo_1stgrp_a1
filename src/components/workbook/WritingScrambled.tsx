@@ -98,7 +98,7 @@ export const WritingScrambled: React.FC<WritingProps> = ({ reactivo, onAnswer, v
         {englishAudioText && (
           <button
             type="button"
-            onClick={() => playAudio(englishAudioText)}
+            onClick={() => playAudio(englishAudioText, { forceLang: 'en-US' })}
             title="Escuchar oración completa en inglés"
             aria-label="Escuchar pronunciación de la oración"
             className="p-2 rounded-full bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors shrink-0 cursor-pointer shadow-xs"
@@ -232,7 +232,7 @@ export const WritingScrambled: React.FC<WritingProps> = ({ reactivo, onAnswer, v
             {englishAudioText && (
               <button
                 type="button"
-                onClick={() => playAudio(englishAudioText)}
+                onClick={() => playAudio(englishAudioText, { forceLang: 'en-US' })}
                 className="text-xs bg-white/80 hover:bg-white border border-current px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer"
               >
                 <Volume2 className="w-3.5 h-3.5" />

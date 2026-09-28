@@ -32,19 +32,16 @@ import {
   Bookmark,
   HelpCircle
 } from 'lucide-react';
-import { 
-  clases, 
-  INITIAL_TEXTO_EXPLICATIVO, 
-  INITIAL_VOCABULARIO, 
-  INITIAL_TEXTOS_BASE, 
-  SheetClaseRow, 
-  SheetReactivoRow, 
+import type {
+  SheetClaseRow,
+  SheetReactivoRow,
   SheetProgresoUsuarioRow,
   SheetVocabularioRow,
-  SheetTextoBaseRow,
-  getTextoBaseFromSheet,
-} from '@/data/workbook/googleDatasheetA1';
-import { mockReactivos, mockVocabulario, mockTextosBase } from '@/data/workbook/mockData';
+  SheetTextoBaseRow
+} from '@/types/workbook/workbookRows';
+import {
+  clases
+} from '@/data/legacy/workbookData';
 import { soundManager, speakText, stopSpeech, cleanTextForTTS } from '@/utils/workbook/audioFeedback';
 import { playAudio, stopAudio } from '@/services/workbook/ttsService';
 import { ReactivoCard } from './ReactivoCard';
@@ -60,8 +57,11 @@ import { SpeakingTutorialModal, SPEAKING_TUTORIAL_STORAGE_KEY } from './Speaking
 import { WritingTutorialModal, WRITING_TUTORIAL_STORAGE_KEY } from './WritingTutorialModal';
 import { normalizeText, normalizeContractions } from './SpeakingExercise';
 import { apiV1Engine } from '@/services/workbook/apiV1Service';
+import { apiUrl } from '@/services/apiConfig';
 import { apiService } from '@/services/workbook/apiService';
+import { mapPrismaExerciseToSheetRow } from '@/services/workbook/prismaMapper';
 import { saveProgressToGoogleSheet } from '@/services/workbook/nativeSheetService';
+import { useAppContext } from '../../context/AppContext';
 import {
   initClaseResumenProgreso,
   recordReactivoResumenProgreso,
@@ -73,22 +73,34 @@ export const loadReactivos = async (
   claseId: string,
   habilidad?: string
 ): Promise<SheetReactivoRow[]> => {
+  // FIX 2026-09-27: eliminados los fallbacks a mock/localStorage.
+  // Solo se sirven ejercicios reales desde Prisma vía /api/lessons/:id.
+  // Si la leccion no tiene ejercicios en DB, se devuelve [] y la UI
+  // muestra un empty state honesto (sin contenido simulado).
   try {
-    const res = await apiV1Engine.getReactivos(claseId, habilidad || 'all');
-    if (res && res.data) {
-      const dataObj = res.data as { reactivos?: SheetReactivoRow[] };
-      if (Array.isArray(dataObj.reactivos) && dataObj.reactivos.length > 0) {
-        return dataObj.reactivos;
+    const res = await fetch(`/api/lessons/${encodeURIComponent(claseId)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json && json.success && json.data && Array.isArray(json.data.exercises)) {
+        const mapped: SheetReactivoRow[] = json.data.exercises.map(
+          (ex: unknown) => mapPrismaExerciseToSheetRow(ex as never)
+        );
+        const filtered =
+          habilidad && habilidad !== 'all'
+            ? mapped.filter((r) => r.habilidad === habilidad.toLowerCase())
+            : mapped;
+        console.log(`[loadReactivos] ${claseId}: ${filtered.length} reactivos desde Prisma`);
+        return filtered;
       }
     }
   } catch (e) {
-    console.warn('loadReactivos error:', e);
+    console.warn('[loadReactivos] /api/lessons fallo:', e);
   }
-  const fromMock = mockReactivos.filter(
-    (r) => r.clase_id === claseId && (!habilidad || habilidad === 'all' || r.habilidad === habilidad)
-  );
-  return fromMock;
+
+  console.warn(`[loadReactivos] ${claseId}: sin ejercicios reales. Devolviendo [].`);
+  return [];
 };
+
 
 interface ClassDetailScreenProps {
   claseId: string;
@@ -108,62 +120,113 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   onSaveProgress,
   existingProgress = [],
 }) => {
+  // FIX 2026-09-27: título de la clase desde API (Prisma) en lugar del legacy
+  const [apiClase, setApiClase] = useState<SheetClaseRow | null>(null);
+  const [apiVocab, setApiVocab] = useState<SheetVocabularioRow[]>([]);
+    // FIX: resetear scroll al cambiar de clase o subpantalla (móvil aterriza en header)
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+  }, [claseId]);
+useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl('/api/lessons/' + encodeURIComponent(claseId)))
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        if (res && res.success && res.data) {
+          const d = res.data;
+          setApiClase({
+            clase_id: d.clase_id,
+            clase_numero: d.clase_numero ?? 0,
+            semana: d.semana ?? 0,
+            sesion: d.sesion ?? 'A',
+            titulo_clase: d.titulo_clase,
+            titulo_video: d.titulo_video ?? d.tituloVideo ?? '',
+            video_url: d.video_url ?? d.videoUrl ?? '',
+            tema_principal: d.temaPrincipal ?? '',
+            tipo_contenido: d.tipoContenido ?? 'original',
+            duracion_min: d.duracionMin ?? 120,
+            estado: d.isPublished ? 'activo' : 'inactivo',
+          });
+            setApiVocab(((d.vocabulary ?? []) as SheetVocabularioRow[]));
+        }
+      })
+      .catch((e) => console.warn('[ClassDetailScreen] No se pudo cargar título desde API:', e));
+    return () => { cancelled = true; };
+  }, [claseId]);
+
   // Current Class Object
   const currentClase: SheetClaseRow = useMemo(() => {
-    const found = clases.find((c) => c.clase_id === claseId) || clases[0];
-    if (claseId === 'A1_C01') {
-      return {
-        ...found,
-        titulo_clase: 'Clase 01: Fase Cero - Singular & Plural',
-        tema_principal: 'La Regla de Oro del Inglés: YOU siempre es plural',
-      };
-    }
-    return found;
-  }, [claseId]);
+    // FIX 2026-09-27: si el API respondió, usar esa data
+    if (apiClase) return apiClase;
+
+    // FIX 2026-09-27: placeholder correcto — NUNCA usar clases[0] como fallback
+    // porque clases[] es legacy (solo tiene C01-C35, sin C00).
+    // FIX 2026-09-27: extraer número de A1_CXX para clase_numero
+    const numMatch = claseId.match(/^A1_C(\d+)$/);
+    const claseNum = numMatch ? parseInt(numMatch[1], 10) : 0;
+    return {
+      clase_id: claseId,
+      clase_numero: claseNum,
+      semana: 0,
+      sesion: 'A' as const,
+      titulo_clase: 'Cargando clase...',
+      titulo_video: '',
+      video_url: '',
+      tema_principal: '',
+      tipo_contenido: 'original' as const,
+      duracion_min: 120,
+      estado: 'activo' as const,
+    };
+  }, [claseId, apiClase]);
 
   // Current SubScreen state
   const [subScreen, setSubScreen] = useState<SubScreen>('detail');
+  const [isReviewMode, setIsReviewMode] = useState<boolean>(false);
+  const [confirmViewSkill, setConfirmViewSkill] = useState<SkillKey | null>(null);
+  const [userProgressBySkill, setUserProgressBySkill] = useState<Record<string, number>>({});
+  const [showCelebration, setShowCelebration] = useState<boolean>(false);
+  const { userEmail } = useAppContext();
   const [selectedSkill, setSelectedSkill] = useState<SkillKey>('grammar');
 
   // Texto base para la habilidad Reading (cargado desde la hoja TEXTOS_BASE)
-  const [textoBase, setTextoBase] = useState<SheetTextoBaseRow | null>(() => {
-    try {
-      const cached = localStorage.getItem(`texto_${claseId}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (parsed && (parsed.contenido_texto?.includes('Ana') || parsed.contenido?.includes('Ana'))) {
-          return parsed;
-        }
-      }
-    } catch {}
-    return getTextoBaseFromSheet(claseId);
-  });
+  // FIX 2026-09-27: sin cache local ni legacy. Solo fetch real desde /api/v1/textos-base.
+  const [textoBase, setTextoBase] = useState<SheetTextoBaseRow | null>(null);
 
   // Cargar texto base dinámicamente desde API / Sheet cuando cambie la clase o se seleccione Reading
   useEffect(() => {
     let isMounted = true;
 
     const fetchTextoBase = async () => {
-      // 1. Carga inmediata síncrona desde hoja local/storage
-      const local = getTextoBaseFromSheet(claseId);
-      if (local && isMounted) {
-        setTextoBase(local);
-      }
-
-      // 2. Consulta al endpoint /api/v1/textos-base con TIMESTAMP para evitar caché
+      // FIX 2026-09-27: sin preload legacy. Solo fetch real.
+      // Consulta al endpoint /api/v1/textos-base con TIMESTAMP para evitar caché
       try {
         const res = await fetch(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}&t=${Date.now()}`, {
           headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
         });
         if (res.ok) {
-          const data = await res.json();
-          if (data && data.texto && isMounted) {
-            setTextoBase(data.texto);
+          const json = await res.json();
+          // FIX 2026-09-27: el endpoint devuelve { success, data } — mapear al shape SheetTextoBaseRow
+          const payload = json && (json.data || json.texto);
+          if (payload && payload.clase_id && isMounted) {
+            const mapped = {
+              texto_id: 'TXT_' + payload.clase_id,
+              clase_id: payload.clase_id,
+              titulo_texto: payload.titulo_texto || payload.titulo || '',
+              titulo: payload.titulo || payload.titulo_texto || '',
+              contenido_texto: payload.contenido_texto || payload.contenido || '',
+              contenido: payload.contenido || payload.contenido_texto || '',
+              palabras_count: payload.word_count || 0,
+              dificultad: payload.difficulty || 1,
+              tiempo_audio_seg: payload.estimated_sec || 20,
+              audio_tts_url: '',
+              activo: true,
+            };
+            setTextoBase(mapped as any);
             try {
-              localStorage.setItem(`texto_${claseId}`, JSON.stringify({
-                ...data.texto,
-                version: Date.now()
-              }));
+              localStorage.setItem(`texto_${claseId}`, JSON.stringify(mapped));
             } catch {}
             return;
           }
@@ -172,15 +235,8 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
         console.warn('HTTP fetch /api/v1/textos-base fallback:', e);
       }
 
-      // 3. Consulta a través de apiV1Engine
-      try {
-        const engineRes = await apiV1Engine.getTextoBase(claseId);
-        if (engineRes && engineRes.data && engineRes.data.texto && isMounted) {
-          setTextoBase(engineRes.data.texto);
-        }
-      } catch (e) {
-        console.warn('apiV1Engine.getTextoBase fallback:', e);
-      }
+      // 3. FIX 2026-09-27: apiV1Engine.getTextoBase lee de workbookData legacy — REMOVIDO.
+      //    Si el fetch al endpoint /api/v1/textos-base falla, se mantiene el estado previo.
     };
 
     fetchTextoBase();
@@ -205,7 +261,7 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   // Text explanation
   const explicacion = useMemo(() => {
     return (
-      INITIAL_TEXTO_EXPLICATIVO.find((e) => e.clase_id === claseId) || {
+      {
         explicacion_id: `${claseId}_EXP`,
         clase_id: claseId,
         titulo_explicacion: currentClase.tema_principal,
@@ -221,16 +277,10 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   }, [claseId, currentClase]);
 
   // Vocabulary for this class
+  // FIX 2026-09-27: vocabulario real desde /api/lessons/:id (Prisma).
   const classVocab = useMemo<SheetVocabularioRow[]>(() => {
-    // For A1_C01, strictly use the 14 official items from INITIAL_VOCABULARIO to guarantee zero phonetics words
-    if (claseId === 'A1_C01') {
-      return INITIAL_VOCABULARIO.filter((v) => v.clase_id === 'A1_C01');
-    }
-    const fromMock = mockVocabulario.filter((v) => v.clase_id === claseId);
-    if (fromMock.length > 0) return fromMock;
-    const fromInitial = INITIAL_VOCABULARIO.filter((v) => v.clase_id === claseId);
-    return fromInitial.length > 0 ? fromInitial : [];
-  }, [claseId]);
+    return apiVocab;
+  }, [apiVocab]);
 
   // Specific groupings for A1_C01
   const pronombres = useMemo(() => {
@@ -251,24 +301,7 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
 
   // Formatted vocabulary for VocabularySection component
   const formattedVocabList = useMemo(() => {
-    if (claseId === 'A1_C01') {
-      return [
-        { word: 'I', ipa: '/aɪ/', translation: 'yo', example: 'I am a student.', category: 'pronombre' },
-        { word: 'you', ipa: '/juː/', translation: 'tú / usted', example: 'You are my friend.', category: 'pronombre' },
-        { word: 'he', ipa: '/hiː/', translation: 'él', example: 'He is a teacher.', category: 'pronombre' },
-        { word: 'she', ipa: '/ʃiː/', translation: 'ella', example: 'She is Maria.', category: 'pronombre' },
-        { word: 'it', ipa: '/ɪt/', translation: 'eso / ello', example: 'It is a book.', category: 'pronombre' },
-        { word: 'we', ipa: '/wiː/', translation: 'nosotros', example: 'We are friends.', category: 'pronombre' },
-        { word: 'they', ipa: '/ðeɪ/', translation: 'ellos', example: 'They are students.', category: 'pronombre' },
-        { word: 'student', ipa: '/ˈstjuːdənt/', translation: 'estudiante', example: 'One student is here.', category: 'sustantivo' },
-        { word: 'students', ipa: '/ˈstjuːdənts/', translation: 'estudiantes', example: 'Many students are here.', category: 'sustantivo' },
-        { word: 'book', ipa: '/bʊk/', translation: 'libro', example: 'One book is here.', category: 'sustantivo' },
-        { word: 'books', ipa: '/bʊks/', translation: 'libros', example: 'Two books are here.', category: 'sustantivo' },
-        { word: 'teacher', ipa: '/ˈtiːtʃər/', translation: 'profesor', example: 'The teacher is here.', category: 'sustantivo' },
-        { word: 'friend', ipa: '/frend/', translation: 'amigo', example: 'He is my friend.', category: 'sustantivo' },
-        { word: 'classroom', ipa: '/ˈklɑːsruːm/', translation: 'aula', example: 'We are in the classroom.', category: 'sustantivo' },
-      ];
-    }
+    // FIX 2026-09-28: bloque hardcoded de A1_C01 eliminado. Todo viene de classVocab (DB).
     return classVocab.map((v) => ({
       word: v.palabra_ingles,
       ipa: v.pronunciacion_af,
@@ -278,53 +311,34 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
     }));
   }, [claseId, classVocab]);
 
-  // Reactivos pool for this class (Datasheet / apiV1Engine + mock fallback)
-  const allClassReactivos = useMemo(() => {
-    try {
-      const stateList = apiV1Engine.getState().reactivos || [];
-      const fromState = stateList.filter(
-        (r) => r.clase_id.toUpperCase() === claseId.toUpperCase()
-      );
-      if (fromState.length > 0) {
-        // Ensure no phonetics questions if A1_C01
-        const cleanReactivos = fromState.filter(
-          (r) => !r.pregunta_texto.toLowerCase().includes('alphabet')
-        );
-        if (cleanReactivos.length >= 25 || claseId !== 'A1_C01') {
-          return cleanReactivos;
-        }
-      }
-    } catch (e) {
-      console.warn('apiV1Engine state fallback', e);
-    }
+    // Reactivos pool for this class (Prisma vía /api/lessons/:id con fallback)
+  const [allClassReactivos, setAllClassReactivos] = useState<SheetReactivoRow[]>([]);
+  const [isLoadingReactivos, setIsLoadingReactivos] = useState<boolean>(true);
 
-    const items = mockReactivos.filter((r) => r.clase_id === claseId);
-    if (items.length > 0) return items;
-    // Fallback if class > 5: generate dynamic items
-    const skills: SkillKey[] = ['grammar', 'reading', 'listening', 'writing', 'speaking'];
-    const fallbackItems: SheetReactivoRow[] = [];
-    skills.forEach((sk) => {
-      for (let i = 1; i <= 5; i++) {
-        fallbackItems.push({
-          reactivo_id: `${claseId}_${sk.slice(0, 4).toUpperCase()}_0${i}`,
-          clase_id: claseId,
-          habilidad: sk,
-          numero: i,
-          tipo_pregunta: 'multiple_choice',
-          instruccion: `Reactivo de práctica de ${sk.toUpperCase()} para ${currentClase.titulo_clase}`,
-          pregunta_texto: `Sample practice prompt #${i} regarding ${currentClase.tema_principal}:`,
-          opciones: ['Option A (Correct)', 'Option B', 'Option C'],
-          respuesta_correcta: 'Option A (Correct)',
-          respuesta_explicacion: `Explicación didáctica: Se aplica la regla de ${currentClase.tema_principal}.`,
-          puntos: 10,
-          tiempo_limite_seg: 25,
-          dificultad: 1,
-          mostrar_traduccion: claseId === 'A1_C01' ? 'completa' : 'parcial',
-        });
+  useEffect(() => {
+    let isMounted = true;
+    (async () => {
+      setIsLoadingReactivos(true);
+      try {
+        const reactivos = await loadReactivos(claseId);
+        if (isMounted) {
+          console.log(`[allClassReactivos] ${claseId}: ${reactivos.length} total cargados`);
+          const bySkill: Record<string, number> = {};
+          reactivos.forEach((r) => {
+            bySkill[r.habilidad] = (bySkill[r.habilidad] || 0) + 1;
+          });
+          console.log(`[allClassReactivos] Distribución:`, bySkill);
+          setAllClassReactivos(reactivos);
+        }
+      } catch (e) {
+        console.warn('Error cargando reactivos:', e);
+        if (isMounted) setAllClassReactivos([]);
+      } finally {
+        if (isMounted) setIsLoadingReactivos(false);
       }
-    });
-    return fallbackItems;
-  }, [claseId, currentClase]);
+    })();
+    return () => { isMounted = false; };
+  }, [claseId]);
 
   // Reactivos for the active selected skill
   const skillReactivos = useMemo(() => {
@@ -455,7 +469,7 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
     const cleanWord = word.replace(/\/[^/]+\//g, '').trim();
     setPlayingVocabId(vocabId);
 
-    playAudio(cleanWord, {
+    playAudio(cleanWord, { forceLang: 'en-US',
       onEnd: () => {
         setPlayingVocabId((prev) => (prev === vocabId ? null : prev));
       },
@@ -539,8 +553,9 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
     let url = currentClase.video_url || '';
     let title = currentClase.titulo_video || 'Video Lección';
 
-    // Correction for Clase 00 / A1_C01
-    if (currentClase.clase_id === 'A1_C01' || url.includes('qC_8Yp_d-Ww') || !url) {
+    // FIX 2026-09-27: eliminado el hardcode que forzaba FASE CERO en A1_C01.
+    // Los videos vienen de la DB (videoUrl). Solo se usa fallback si NO hay url.
+    if (url.includes('qC_8Yp_d-Ww') || !url) {
       url = 'https://youtube.com/shorts/JBB6JZT4VIc?si=Pz1xbJ-YOJpAWmpQ';
       title = 'FASE CERO TECLINGO: El Secreto de los Singulares y Plurales';
     }
@@ -575,7 +590,7 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   }, [currentClase.clase_id, currentClase.video_url, currentClase.titulo_video]);
 
   // Start skill exercise
-  const startSkillExercise = (skill: SkillKey) => {
+  const startSkillExercise = (skill: SkillKey, review: boolean = false) => {
     setSelectedSkill(skill);
     setCurrentQuestionIdx(0);
     setSelectedOption(null);
@@ -591,6 +606,7 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
       xp: 0,
       answeredRows: [],
     });
+    setIsReviewMode(review);
     setSubScreen('exercise');
   };
 
@@ -912,7 +928,53 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   };
 
   // Calculate skill completion in existing progress
+  useEffect(() => {
+    if (!userEmail) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const url = '/api/progress/' + encodeURIComponent(userEmail);
+        const res = await fetch(url);
+        if (!res.ok) return;
+        const json = await res.json();
+        if (cancelled) return;
+        if (!json.ok || !json.data || !json.data.byLesson) return;
+        const lessonData = json.data.byLesson[claseId];
+        if (!lessonData || !lessonData.skills) return;
+        const map: Record<string, number> = {};
+        const entries = Object.entries(lessonData.skills as Record<string, number>);
+        for (let i = 0; i < entries.length; i++) {
+          const k = entries[i][0];
+          const v = entries[i][1];
+          map[k.toUpperCase()] = Number(v) || 0;
+        }
+        console.log('[ClassDetailScreen] Progreso por skill desde Prisma:', map);
+        setUserProgressBySkill(map);
+      } catch (e) {
+        console.warn('[ClassDetailScreen] Error cargando progreso:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [claseId, userEmail, subScreen]);
+
+  // NUEVO: Detectar cuando las 5 habilidades están completas
+  useEffect(() => {
+    const skills: SkillKey[] = ['grammar', 'reading', 'listening', 'writing', 'speaking'];
+    const allDone = skills.every((s) => (userProgressBySkill[s.toUpperCase()] ?? 0) >= 5);
+    if (!allDone) return;
+    const key = 'celebrated_' + claseId;
+    try {
+      if (typeof sessionStorage !== 'undefined' && !sessionStorage.getItem(key)) {
+        setShowCelebration(true);
+        sessionStorage.setItem(key, 'true');
+      }
+    } catch {}
+  }, [userProgressBySkill, claseId]);
+
   const getSkillCount = (skill: SkillKey) => {
+    const fromPrisma = userProgressBySkill[skill.toUpperCase()];
+    if (typeof fromPrisma === 'number' && fromPrisma > 0) return fromPrisma;
+
     return existingProgress.filter(
       (p) => p.clase_id === claseId && p.habilidad === skill && p.correcto
     ).length;
@@ -930,7 +992,6 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   return (
     <div className="w-full min-h-screen bg-white text-gray-900 p-2.5 sm:p-6 lg:p-8 select-none max-w-full overflow-x-hidden">
       <div className="max-w-6xl mx-auto w-full">
-
         {/* Top Header / Breadcrumbs */}
         <div className="flex flex-wrap items-center justify-between gap-2.5 mb-5 pb-3.5 border-b border-gray-200 w-full">
           <button
@@ -994,13 +1055,13 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
                   {/* Strictly 9:16 vertical responsive container */}
                   <div className="relative aspect-[9/16] w-full max-w-[320px] rounded-2xl overflow-hidden border border-gray-200 bg-black shadow-lg shrink-0">
                     <iframe
-                      className="w-full h-full border-0"
-                      src={resolvedVideoInfo.embedUrl}
-                      title={`Video Clase: ${resolvedVideoInfo.title}`}
-                      allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                      referrerPolicy="strict-origin-when-cross-origin"
-                      allowFullScreen
-                    />
+                        className="w-full h-full border-0"
+                        src={resolvedVideoInfo.embedUrl}
+                        title={`Video Clase: ${resolvedVideoInfo.title}`}
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                        referrerPolicy="strict-origin-when-cross-origin"
+                        allowFullScreen
+                      />
                   </div>
 
                   {/* Video Info / Context */}
@@ -1112,8 +1173,11 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
                     <button
                       key={skill.key}
                       type="button"
-                      onClick={() => startSkillExercise(skill.key)}
-                      className={`p-3.5 sm:p-4 rounded-xl border ${skill.border} ${skill.bg} hover:shadow-md hover:scale-[1.02] sm:hover:scale-105 transition-all duration-200 text-left flex flex-col justify-between cursor-pointer group shadow-xs active:scale-98`}
+                      onClick={() => {
+                        if (isDone) { setConfirmViewSkill(skill.key); }
+                        else { startSkillExercise(skill.key, false); }
+                      }}
+                      className={`relative p-3.5 sm:p-4 rounded-xl border transition-all duration-200 text-left flex flex-col justify-between cursor-pointer group shadow-xs active:scale-98 ${isDone ? 'border-[#00F5D4] bg-[#00F5D4]/10 ring-2 ring-[#00F5D4]/40 shadow-[0_0_15px_rgba(0,245,212,0.25)]' : skill.border + ' ' + skill.bg + ' hover:shadow-md hover:scale-[1.02] sm:hover:scale-105'}`}
                     >
                       <div className="flex items-center justify-between mb-2 sm:mb-3">
                         <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${skill.color} shrink-0`} />
@@ -1144,9 +1208,15 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
                       </div>
 
                       <div className="mt-2.5 sm:mt-3 flex items-center justify-between text-xs font-mono text-gray-800 font-bold pt-2 border-t border-gray-100">
-                        <span>{isDone ? 'Repasar' : 'Comenzar'}</span>
+                        <span>{isDone ? 'Ver' : 'Comenzar'}</span>
                         <ChevronRight className="w-3.5 h-3.5 text-blue-600 group-hover:translate-x-1 transition-transform shrink-0" />
                       </div>
+                        {isDone && (
+                          <div className="absolute -top-2 left-1/2 -translate-x-1/2 -translate-y-full bg-[#00F5D4] text-black text-[10px] font-black uppercase tracking-wider px-3 py-2 rounded-lg shadow-lg z-50 whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none border-2 border-white">
+                            ✓ Completada — Click para ver
+                            <div className="absolute left-1/2 -translate-x-1/2 top-full w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-[#00F5D4]"></div>
+                          </div>
+                        )}
                     </button>
                   );
                 })}
@@ -1241,7 +1311,77 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
             </div>
 
             {/* PASO 1 Y PASO 2: Visualización exclusiva por fases */}
-            {hasReadingPhase && isReadingPhase ? (
+            {isReviewMode ? (
+              <div className="bg-white border border-gray-200 rounded-2xl p-6 sm:p-8 shadow-sm text-left max-w-full">
+                <div className="flex items-center gap-2 mb-4 pb-3 border-b border-gray-100">
+                  <span className="px-2.5 py-1 rounded-full bg-[#00F5D4]/15 text-[#00F5D4] border border-[#00F5D4]/40 text-xs font-mono font-bold uppercase tracking-wider">
+                    {currentReactivo.habilidad.toUpperCase()} · #{currentReactivo.numero_reactivo || currentReactivo.numero || 1}
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-[#00F5D4]/15 text-[#00F5D4] border border-[#00F5D4]/40 text-xs font-mono font-bold uppercase tracking-wider">
+                    📖 Solo lectura
+                  </span>
+                </div>
+
+                <p className="text-xs font-mono text-blue-700 mb-3">
+                  {currentReactivo.instruccion}
+                </p>
+
+                <div className="bg-gray-50 rounded-xl p-4 border border-gray-200 mb-4">
+                  <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-2">Enunciado</p>
+                  <p className="text-base sm:text-lg font-bold text-gray-900">
+                    {currentReactivo.pregunta_texto}
+                  </p>
+                  {currentReactivo.frase_traduccion && (
+                    <p className="text-sm text-gray-600 italic mt-2">
+                      "{currentReactivo.frase_traduccion}"
+                    </p>
+                  )}
+                </div>
+
+                {currentReactivo.opciones && currentReactivo.opciones.length > 0 && (
+                  <div className="space-y-2.5 mb-4">
+                    {currentReactivo.opciones.map((opt, i) => {
+                      const isCorrect = opt === currentReactivo.respuesta_correcta;
+                      return (
+                        <div
+                          key={i}
+                          className={"p-3.5 rounded-xl border text-sm " + (isCorrect ? "bg-emerald-50 border-emerald-500 text-emerald-950 font-bold" : "bg-gray-50 border-gray-200 text-gray-500")}
+                        >
+                          <span className="font-mono mr-2">{String.fromCharCode(65 + i)})</span>
+                          {opt}
+                          {isCorrect && <span className="ml-2 text-emerald-700 font-black">✓ Correcta</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {(!currentReactivo.opciones || currentReactivo.opciones.length === 0) && (
+                  <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-300 mb-4">
+                    <p className="text-xs font-bold text-emerald-900 uppercase tracking-wider mb-1">Respuesta correcta</p>
+                    <p className="text-base font-bold text-emerald-950">{currentReactivo.respuesta_correcta}</p>
+                  </div>
+                )}
+
+                {currentReactivo.respuesta_explicacion && (
+                  <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-950 text-xs leading-relaxed">
+                    <span className="font-bold">💡 </span>
+                    {currentReactivo.respuesta_explicacion}
+                  </div>
+                )}
+
+                <div className="flex justify-end pt-5 mt-5 border-t border-gray-100">
+                  <button
+                    type="button"
+                    onClick={handleNextQuestion}
+                    className="w-full sm:w-auto px-6 py-3 rounded-xl bg-[#00F5D4] hover:brightness-95 text-black font-mono font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md transition-all cursor-pointer active:scale-95"
+                  >
+                    {currentQuestionIdx + 1 >= skillReactivos.length ? "Ver resumen" : "Siguiente reactivo"}
+                    <ChevronRight className="w-4 h-4 shrink-0" />
+                  </button>
+                </div>
+              </div>
+            ) : hasReadingPhase && isReadingPhase ? (
               /* FASE 1: MOSTRAR ÚNICAMENTE LA TARJETA DE LECTURA (MY CLASSROOM) */
               <ReadingTextBase
                 texto={textoBase}
@@ -1261,6 +1401,7 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
                 timeLeft={timeLeft}
                 textoBase={textoBase}
                 isTutorialOpen={showGrammarTutorial || showReadingGrammarTutorial || showListeningTutorial || showSpeakingTutorial || showWritingTutorial}
+                isReviewMode={isReviewMode}
               />
             )}
 
@@ -1379,6 +1520,51 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
         )}
 
       </div>
+
+      {/* MODAL: Confirmar ver habilidad completada */}
+      {confirmViewSkill && (
+        <div
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setConfirmViewSkill(null)}
+        >
+          <div
+            className="max-w-md w-full bg-white rounded-2xl border-2 border-[#00F5D4] p-6 shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="w-14 h-14 rounded-full bg-[#00F5D4]/20 border-2 border-[#00F5D4] flex items-center justify-center mx-auto mb-4">
+              <CheckCircle2 className="w-7 h-7 text-[#00F5D4]" />
+            </div>
+            <h3 className="text-lg font-black text-center text-gray-900 mb-2 uppercase">
+              Habilidad ya completada
+            </h3>
+            <p className="text-sm text-center text-gray-600 mb-2 leading-relaxed">
+              Ya completaste los 5 reactivos de <strong className="text-gray-900 uppercase">{confirmViewSkill}</strong> en esta clase.
+            </p>
+            <p className="text-xs text-center text-gray-500 mb-6 italic">
+              Entrarás en modo revisión (solo lectura). Tu progreso no se verá afectado.
+            </p>
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmViewSkill(null)}
+                className="flex-1 px-4 py-3 rounded-xl bg-gray-100 hover:bg-gray-200 text-gray-800 font-bold text-xs uppercase cursor-pointer"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  startSkillExercise(confirmViewSkill, true);
+                  setConfirmViewSkill(null);
+                }}
+                className="flex-1 px-4 py-3 rounded-xl bg-[#00F5D4] hover:brightness-95 text-black font-bold text-xs uppercase cursor-pointer shadow-md"
+              >
+                Ver revisión
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

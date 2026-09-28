@@ -15,3 +15,17 @@ api/minimal.ts
 Google_docs/
 teclingo_repomix-output.txt
 repomix-output.xml
+
+# Respaldos locales de código (no deben versionarse)
+*.bak
+*.bak_*
+*.ROTO.bak
+*.DEPRECATED.bak
+*.DELETED.bak
+*.obsolete
+backups_*/
+
+# Exportaciones de datos / Identity Lake (contienen datos personales)
+*.xlsx
+TECLINGO_IDENTITY_LAKE_V1*.xlsx
+_matrix_test.cjs

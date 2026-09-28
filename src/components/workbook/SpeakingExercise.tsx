@@ -69,6 +69,7 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
   const [transcript, setTranscript] = useState<string>('');
   const [errorMessage, setErrorMessage] = useState<string>('');
   const [isSupported, setIsSupported] = useState<boolean>(true);
+  const [isStoppingAudio, setIsStoppingAudio] = useState<boolean>(false);
 
   // Referencia al objeto de reconocimiento de voz
   const recognitionRef = useRef<any>(null);
@@ -126,6 +127,10 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
       recognition.onresult = (event: any) => {
         if (event.results && event.results[0] && event.results[0][0]) {
           const spokenText = event.results[0][0].transcript || '';
+          console.log('[MIC] Transcribed:', JSON.stringify(spokenText));
+          console.log('[MIC] Target:', JSON.stringify(targetText));
+          console.log('[MIC] Normalized spoken:', JSON.stringify(normalizeText(spokenText)));
+          console.log('[MIC] Normalized target:', JSON.stringify(normalizeText(targetText)));
           setTranscript(spokenText);
           setIsRecording(false);
           evaluateSpokenText(spokenText);
@@ -178,11 +183,29 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
     const normSpokenContractions = normalizeContractions(spokenText);
     const normTargetContractions = normalizeContractions(targetText);
 
-    // Comparación tolerante (minúsculas, sin signos de puntuación, sin espacios dobles)
     const isExactMatch = normSpoken === normTarget;
     const isContractionMatch = normSpokenContractions === normTargetContractions;
 
-    const isCorrect = isExactMatch || isContractionMatch;
+    // NUEVO (2026-09-25): comparación por similitud de palabras.
+    // Acepta si >= 80% de las palabras del target coinciden con las del spoken.
+    const targetWords = normTargetContractions.split(' ').filter(Boolean);
+    const spokenWords = normSpokenContractions.split(' ').filter(Boolean);
+
+    let matchCount = 0;
+    const spokenCopy = [...spokenWords];
+    for (const w of targetWords) {
+      const idx = spokenCopy.indexOf(w);
+      if (idx >= 0) {
+        matchCount++;
+        spokenCopy.splice(idx, 1);
+      }
+    }
+    const similarity = targetWords.length > 0 ? matchCount / targetWords.length : 0;
+    const isSimilarEnough = similarity >= 0.8;
+
+    console.log('[MIC] Similarity:', (similarity * 100).toFixed(1) + '%', '| match:', matchCount, '/', targetWords.length);
+
+    const isCorrect = isExactMatch || isContractionMatch || isSimilarEnough;
 
     onAnswer({
       respuesta: spokenText,
@@ -193,14 +216,19 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
 
   // Manejador del botón "Escuchar pronunciación" (TTS)
   const handleToggleAudio = () => {
+    // FIX 2026-09-26: Si esta deteniendo, no hacer nada (evitar doble click)
+    if (isStoppingAudio) return;
+
     if (isPlayingAudio) {
+      setIsStoppingAudio(true);
       stopSpeech();
       stopAudio();
       setIsPlayingAudio(false);
+      setTimeout(() => setIsStoppingAudio(false), 100);
       return;
     }
 
-    // Detener grabación si estuviera activa
+    // Detener grabacion si estuviera activa
     if (isRecording && recognitionRef.current) {
       try {
         recognitionRef.current.abort();
@@ -209,7 +237,7 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
     }
 
     setIsPlayingAudio(true);
-    playAudio(targetText, {
+    playAudio(targetText, { forceLang: 'en-US',
       onStart: () => setIsPlayingAudio(true),
       onEnd: () => setIsPlayingAudio(false),
       onError: () => setIsPlayingAudio(false),
@@ -220,14 +248,16 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
   const handleToggleRecord = () => {
     setErrorMessage('');
 
-    // REGLA CRÍTICA: Detener audio TTS de inmediato al grabar
+    // FIX 2026-09-26: Si se esta reproduciendo audio, forzar stop + esperar
+    // antes de activar microfono. Esto previene que el mic capture el audio demo.
+    const wasPlayingAudio = isPlayingAudio;
     if (isPlayingAudio) {
       stopSpeech();
       stopAudio();
       setIsPlayingAudio(false);
     }
 
-    // Si ya está grabando, detenerlo
+    // Si ya esta grabando, detenerlo (sin esperar)
     if (isRecording) {
       if (recognitionRef.current) {
         try {
@@ -235,6 +265,30 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
         } catch {}
       }
       setIsRecording(false);
+      return;
+    }
+
+    // Si se acababa de detener el audio, esperar 350ms para que el navegador
+    // termine de cancelar cualquier buffer de audio residual.
+    if (wasPlayingAudio) {
+      setTimeout(() => {
+        if (!recognitionRef.current) {
+          setErrorMessage('El reconocimiento de voz no esta listo.');
+          return;
+        }
+        setTranscript('');
+        try {
+          recognitionRef.current.start();
+        } catch (err: any) {
+          try {
+            recognitionRef.current.abort();
+            setTimeout(() => recognitionRef.current.start(), 120);
+          } catch {
+            setErrorMessage('No se pudo activar el microfono. Vuelve a hacer clic.');
+            setIsRecording(false);
+          }
+        }
+      }, 350);
       return;
     }
 
@@ -274,9 +328,7 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
             🗣️
           </div>
           <div>
-            <span className="text-[10px] uppercase font-mono tracking-wider text-rose-700 font-bold block">
-              Read Aloud & Pronunciation Check
-            </span>
+            
             <p className="text-xs sm:text-sm font-semibold text-rose-900 leading-snug">
               Lee la frase en voz alta con tu micrófono después de escuchar la pronunciación:
             </p>
@@ -310,10 +362,7 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
 
       {/* 2. TARJETA CENTRAL: FRASE A LEER (pregunta_texto) DE FORMA CLARA Y GRANDE */}
       <div className="bg-white rounded-2xl p-6 sm:p-8 border-2 border-slate-200 text-center shadow-xs relative">
-        <div className="inline-flex items-center gap-1.5 text-xs uppercase tracking-wider font-bold text-rose-600 bg-rose-50 px-3 py-1 rounded-full border border-rose-100 mb-3">
-          <Sparkles className="w-3.5 h-3.5 text-rose-500" />
-          <span>Frase a leer en voz alta</span>
-        </div>
+
 
         <h2 className="text-2xl sm:text-3xl lg:text-4xl font-black text-slate-900 font-sans tracking-tight leading-tight my-2">
           {targetText}
@@ -387,7 +436,7 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
             type="button"
             id="btn-speaking-record-main"
             onClick={handleToggleRecord}
-            disabled={isResolved || !isSupported}
+            disabled={isResolved || !isSupported || isPlayingAudio}
             aria-label={isRecording ? 'Detener grabación' : 'Grabar voz'}
             className={`
               relative w-24 h-24 sm:w-28 sm:h-28 rounded-full flex flex-col items-center justify-center transition-all duration-300 shadow-xl cursor-pointer

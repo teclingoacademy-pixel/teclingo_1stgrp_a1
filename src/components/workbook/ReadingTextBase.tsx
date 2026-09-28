@@ -9,7 +9,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { BookOpen, Volume2, VolumeX, ArrowRight, CheckCircle2, Headphones } from 'lucide-react';
-import { SheetTextoBaseRow } from '@/data/workbook/googleDatasheetA1';
+import type { SheetTextoBaseRow } from '@/types/workbook/workbookRows';
 import { playAudio, stopAudio } from '@/services/workbook/ttsService';
 
 export interface ReadingTextBaseProps {
@@ -70,7 +70,7 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
         setHasAudioEnded(true);
       };
       audio.onerror = () => {
-        playAudio(contenido, {
+        playAudio(contenido, { forceLang: 'en-US',
           onEnd: () => {
             setIsPlaying(false);
             setHasAudioEnded(true);
@@ -82,7 +82,7 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
         });
       };
       audio.play().catch(() => {
-        playAudio(contenido, {
+        playAudio(contenido, { forceLang: 'en-US',
           onEnd: () => {
             setIsPlaying(false);
             setHasAudioEnded(true);
@@ -94,7 +94,7 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
         });
       });
     } else {
-      playAudio(contenido, {
+      playAudio(contenido, { forceLang: 'en-US',
         onEnd: () => {
           setIsPlaying(false);
           setHasAudioEnded(true);

@@ -46,21 +46,8 @@ interface DataLakeResponse {
 }
 
 async function postToDataLake(action: string, payload: Record<string, any>): Promise<DataLakeResponse> {
-  try {
-    const response = await fetch(DATA_LAKE_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action,
-        secret: DATA_LAKE_SECRET,
-        ...payload,
-      }),
-    });
-    return await response.json();
-  } catch (error) {
-    console.error(`[dataLakeProgressService] Error en ${action}:`, error);
-    return { ok: false, error: String(error) };
-  }
+  console.log(`[DataLake MOCK] action=${action} — datos van a PostgreSQL`);
+  return { ok: true };
 }
 
 /**

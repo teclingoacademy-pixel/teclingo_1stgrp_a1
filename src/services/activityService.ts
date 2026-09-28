@@ -39,49 +39,16 @@ interface ObtenerActividadesResponse {
 }
 
 /**
- * Guarda una actividad de alumno en el Data Lake
+ * Google Sheets DESHABILITADO — mock responses
  */
 export async function guardarActividadAlumno(actividad: ActividadAlumno): Promise<ActividadResponse> {
-  try {
-    const response = await fetch(ACTIVITY_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'guardarActividadAlumno',
-        secret: ACTIVITY_SECRET,
-        ...actividad,
-        fecha: actividad.fecha || new Date().toISOString()
-      })
-    });
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('[activityService] Error guardando actividad:', error);
-    return { ok: false, error: String(error) };
-  }
+  console.log('[Activity MOCK] guardarActividadAlumno — datos van a PostgreSQL');
+  return { ok: true, id: 'mock-' + Date.now() };
 }
 
-/**
- * Obtiene todas las actividades de un alumno
- */
 export async function obtenerActividadesAlumno(email: string, lessonId?: string): Promise<ObtenerActividadesResponse> {
-  try {
-    const response = await fetch(ACTIVITY_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'obtenerActividadesAlumno',
-        secret: ACTIVITY_SECRET,
-        email,
-        lesson_id: lessonId || ''
-      })
-    });
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('[activityService] Error obteniendo actividades:', error);
-    return { ok: false, error: String(error) };
-  }
+  console.log('[Activity MOCK] obtenerActividadesAlumno — datos van a PostgreSQL');
+  return { ok: true, data: [], total: 0 };
 }
 
 /**
@@ -93,23 +60,6 @@ export async function calificarActividadAlumno(
   calificacion: string,
   retroalimentacion: string
 ): Promise<ActividadResponse> {
-  try {
-    const response = await fetch(ACTIVITY_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action: 'calificarActividadAlumno',
-        secret: ACTIVITY_SECRET,
-        email,
-        exercise_id: exerciseId,
-        calificacion_docente: calificacion,
-        retroalimentacion
-      })
-    });
-    const data = await response.json();
-    return data;
-  } catch (error) {
-    console.error('[activityService] Error calificando actividad:', error);
-    return { ok: false, error: String(error) };
-  }
+  console.log('[Activity MOCK] calificarActividadAlumno — datos van a PostgreSQL');
+  return { ok: true };
 }

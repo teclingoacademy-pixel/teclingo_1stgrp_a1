@@ -12,6 +12,9 @@ const IDENTITY_API_URL =
   (import.meta.env.VITE_IDENTITY_API_URL as string | undefined)?.trim() ||
   'https://script.google.com/macros/s/AKfycbz1OBcF2logEt-r_gaOdpG9MhcjsVkz3_MZiJKf9iSS1T1lpYmAj_MoFtrssCnT7q-k/exec';
 
+const LOCAL_API_URL =
+  (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000';
+
 const GOOGLE_CLIENT_ID =
   (import.meta.env.VITE_GOOGLE_CLIENT_ID as string | undefined)?.trim() ||
   '853891222522-t26sp8ig5kn5vfir05om765vr2i0jsj3.apps.googleusercontent.com';
@@ -34,6 +37,7 @@ interface LakeResponse {
   asesorias?: Array<Record<string, unknown>>;
   config?: Record<string, unknown>;
   asesoria_id?: string;
+  hoja?: string;
 }
 
 /** Convierte todos los valores string de un objeto a MAYÚSCULAS (para datos de formulario). */
@@ -83,26 +87,45 @@ function toUpperFieldsSafe<T extends Record<string, unknown>>(obj: T): T {
   return out;
 }
 
+/**
+ * Google Sheets DESHABILITADO — todos los datos se guardan en PostgreSQL.
+ * Esta funcion retorna mock responses para mantener compatibilidad con
+ * el codigo existente que llama a postAlLake().
+ */
 async function postAlLake(payload: Record<string, unknown>, timeoutMs = 12000): Promise<LakeResponse> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const resp = await fetch(IDENTITY_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    return await resp.json();
-  } finally {
-    clearTimeout(timer);
+  const action = String(payload.action || '');
+  console.log(`[Lake MOCK] action=${action} — datos van a PostgreSQL, no a Google Sheets`);
+
+  // Simular respuestas segun la accion
+  switch (action) {
+    case 'verificarEmail':
+      return { ok: true, exists: false };
+    case 'obtenerPerfil':
+      return { ok: true, perfil: {} };
+    case 'guardarPerfil':
+      return { ok: true, perfil: {}, hoja: 'PostgreSQL' };
+    case 'obtenerMetas':
+      return { ok: true, hitos: [] };
+    case 'obtenerLogros':
+      return { ok: true, hitos: [] };
+    case 'obtenerAsesorias':
+      return { ok: true, asesorias: [] };
+    case 'obtenerConfig':
+      return { ok: true, config: {} };
+    default:
+      return { ok: true };
   }
 }
 
 /** Verifica si un email ya existe en el ecosistema */
 export async function verificarEmail(email: string): Promise<boolean> {
   try {
-    const res = await postAlLake({ action: 'verificarEmail', email: email.toLowerCase().trim() }, 8000);
+    const resp = await fetch(`${LOCAL_API_URL}/api/users/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim() }),
+    });
+    const res = await resp.json();
     return Boolean(res?.ok && res.exists);
   } catch {
     return false;
@@ -110,22 +133,20 @@ export async function verificarEmail(email: string): Promise<boolean> {
 }
 
 /**
- * Consulta el lake distinguiendo 3 estados. Se usa al arrancar la app para
- * evitar que una sesión fantasma en localStorage (pruebas previas) deje entrar
- * a un usuario SIN pasar por AuthPortal / registro.
+ * Consulta si el usuario existe en PostgreSQL.
+ * Se usa al arrancar la app para evitar sesión fantasma.
  */
 export type EstadoIdentidadLake = 'existe' | 'no_existe' | 'indefinido';
 export async function consultarIdentidadEnLake(email: string): Promise<EstadoIdentidadLake> {
   try {
-    const res = await postAlLake({ action: 'verificarEmail', email: email.toLowerCase().trim() }, 6000);
-    if (res?.ok) return res.exists ? 'existe' : 'no_existe';
-    return 'indefinido';
+    const exists = await verificarEmail(email);
+    return exists ? 'existe' : 'no_existe';
   } catch {
     return 'indefinido';
   }
 }
 
-/** Registra un usuario nuevo en el lake (hash de password generado server-side) */
+/** Registra un usuario nuevo en PostgreSQL via Express local */
 export async function registrarUsuario(
   email: string,
   password: string,
@@ -134,96 +155,98 @@ export async function registrarUsuario(
   institutionCode: string = ''
 ): Promise<IdentidadResultado> {
   try {
-    const res = await postAlLake({
-      action: 'registrarUsuario',
-      email: email.toLowerCase().trim(),
-      password,
-      nombre: nombre.toUpperCase().trim(),
-      metodo: 'email',
-      rol,
-      institution_code: institutionCode.toUpperCase().trim(),
-      origen_app: 'teclingo_v4',
+    const resp = await fetch(`${LOCAL_API_URL}/api/users`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: nombre.toUpperCase().trim(),
+        email: email.toLowerCase().trim(),
+        password,
+        role: rol,
+      }),
     });
+    const res = await resp.json();
     if (res?.ok) {
       return { ok: true, code: res.code, email: res.perfil?.email as string, perfil: res.perfil };
     }
     return { ok: false, code: res?.code, error: res?.error };
   } catch (err) {
-    console.warn('[Identity] Lake no disponible para registro:', err);
+    console.warn('[Identity] API local no disponible para registro:', err);
     return { ok: false, error: 'identity_unreachable' };
   }
 }
 
-/** Login con email y password */
+/** Login con email y password via Express local */
 export async function loginEmail(
   email: string,
   password: string
 ): Promise<IdentidadResultado> {
   try {
-    const res = await postAlLake({
-      action: 'loginEmail',
-      email: email.toLowerCase().trim(),
-      password,
-      origen_app: 'teclingo_v4',
+    const resp = await fetch(`${LOCAL_API_URL}/api/users/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim(), password }),
     });
+    const res = await resp.json();
     if (res?.ok && res.code === 'login_ok') {
       return { ok: true, code: 'login_ok', email: res.perfil?.email as string, perfil: res.perfil };
     }
     return { ok: false, code: res?.code, error: res?.error };
   } catch (err) {
-    console.warn('[Identity] Lake no disponible para login:', err);
+    console.warn('[Identity] API local no disponible para login:', err);
     return { ok: false, error: 'identity_unreachable' };
   }
 }
 
-/** Login con token de Google (validado por el lake contra tokeninfo) */
+/** Login con token de Google — valida contra Google y persiste en PostgreSQL via Express local */
 export async function loginGoogle(token: string, rol: string = 'ALUMNO', institutionCode: string = ''): Promise<IdentidadResultado> {
   if (!token) return { ok: false, error: 'token_requerido' };
   try {
-    const res = await postAlLake({
-      action: 'loginGoogle',
-      token,
-      client_id: GOOGLE_CLIENT_ID,
-      rol,
-      institution_code: institutionCode,
-      origen_app: 'teclingo_v4',
+    const tokenInfoResp = await fetch(`https://oauth2.googleapis.com/tokeninfo?id_token=${token}`);
+    if (!tokenInfoResp.ok) {
+      return { ok: false, error: 'token_invalido' };
+    }
+    const tokenInfo = await tokenInfoResp.json();
+    const email = tokenInfo.email;
+    const name = tokenInfo.name || tokenInfo.given_name || '';
+
+    if (!email) return { ok: false, error: 'email_no_en_token' };
+
+    const resp = await fetch(`${LOCAL_API_URL}/api/users/google-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name, rol, institution_code: institutionCode }),
     });
+    const res = await resp.json();
     if (res?.ok) {
       return { ok: true, code: res.code, email: res.perfil?.email as string, perfil: res.perfil };
     }
     return { ok: false, code: res?.code, error: res?.error };
   } catch (err) {
-    console.warn('[Identity] Lake no disponible para loginGoogle:', err);
+    console.warn('[Identity] API local no disponible para loginGoogle:', err);
     return { ok: false, error: 'identity_unreachable' };
   }
 }
 
-/**
- * Completa el registro de un usuario de PRIMERA VEZ que entró con Google.
- * loginGoogle ya validó el token y dio de alta la identidad; esta función
- * asigna el rol (ALUMNO/DOCENTE/DIRECTOR) e institución que el usuario
- * eligió, garantizando que nunca entre al dashboard sin haber elegido su
- * tipo de perfil.
- */
+/** Completa el registro de un usuario de PRIMERA VEZ que entró con Google */
 export async function finalizarRegistroGoogle(
   email: string,
   rol: string,
   institutionCode: string = ''
 ): Promise<IdentidadResultado> {
   try {
-    const res = await postAlLake({
-      action: 'finalizarRegistroGoogle',
-      email: email.toLowerCase().trim(),
-      rol,
-      institution_code: institutionCode,
-      origen_app: 'teclingo_v4',
+    const resp = await fetch(`${LOCAL_API_URL}/api/users/google-login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, name: '', rol, institution_code: institutionCode }),
     });
+    const res = await resp.json();
     if (res?.ok) {
       return { ok: true, code: res.code, email: res.perfil?.email as string, perfil: res.perfil };
     }
     return { ok: false, code: res?.code, error: res?.error };
   } catch (err) {
-    console.warn('[Identity] Lake no disponible para finalizarRegistroGoogle:', err);
+    console.warn('[Identity] API local no disponible para finalizarRegistroGoogle:', err);
     return { ok: false, error: 'identity_unreachable' };
   }
 }
@@ -231,9 +254,15 @@ export async function finalizarRegistroGoogle(
 /** Obtiene el perfil completo de un usuario desde el lake */
 export async function obtenerPerfil(email: string): Promise<Record<string, unknown> | null> {
   try {
-    const res = await postAlLake({ action: 'obtenerPerfil', email: email.toLowerCase().trim() }, 8000);
-    if (res?.ok && res.perfil) {
-      return res.perfil;
+    const resp = await fetch(`${LOCAL_API_URL}/api/user/${encodeURIComponent(email.toLowerCase().trim())}`);
+    const res = await resp.json();
+    if (res?.ok && res.user) {
+      const u = res.user;
+      return {
+        id: u.id, email: u.email, name: u.name, rol: u.role,
+        avatar: u.avatar, nivel: u.nivel, nikName: u.nikName,
+        metodo: u.metodo, active: u.active,
+      };
     }
     return null;
   } catch {
@@ -328,14 +357,161 @@ export async function obtenerPerfilCompleto(
     ? { email: emailOrArgs }
     : emailOrArgs;
   try {
-    const payload: Record<string, unknown> = {
-      action: 'obtenerPerfilCompleto',
-      email: args.email.toLowerCase().trim(),
+    const email = args.email.toLowerCase().trim();
+    const rol = args.rol;
+
+    // 1. Obtener datos base del usuario
+    const userResp = await fetch(`${LOCAL_API_URL}/api/user/${encodeURIComponent(email)}`);
+    const userRes = await userResp.json();
+    if (!userRes?.ok || !userRes.user) return null;
+    const u = userRes.user;
+
+    // Mapear a formato del frontend (兼容ibilidad con campo 'nombre')
+    const perfil: Record<string, unknown> = {
+      id: u.id, email: u.email, name: u.name, nombre: u.name,
+      rol: u.role, avatar: u.avatar, nivel: u.nivel, nikName: u.nikName,
+      metodo: u.metodo, active: u.active,
     };
-    if (args.rol) payload.rol = args.rol;
-    const res = await postAlLake(payload, 8000);
-    if (res?.ok && res.perfil) return res.perfil;
-    return null;
+
+    // 2. Si es DIRECTOR, enrichir con DirectorProfile
+    if (rol === 'DIRECTOR') {
+      const dirResp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(email)}`);
+      const dirRes = await dirResp.json();
+      if (dirRes?.ok && dirRes.profile) {
+        const d = dirRes.profile;
+        perfil.institution_name = d.institutionName || '';
+        perfil.institution_code = d.institutionCode || '';
+        perfil.institution_logo = d.institutionLogo || '';
+        perfil.institution_type = d.institutionType || '';
+        perfil.slogan = d.slogan || '';
+        perfil.phone = d.phone || '';
+        perfil.bio = d.bio || '';
+        perfil.curp = d.curp || '';
+        perfil.birth_date = d.birthDate || '';
+        perfil.degree = d.degree || '';
+        perfil.experience_years = d.experienceYears || 0;
+        perfil.inst_phone = d.instPhone || '';
+        perfil.address = d.address || '';
+        perfil.inst_email = d.instEmail || '';
+        perfil.facebook = d.facebook || '';
+        perfil.instagram = d.instagram || '';
+        perfil.linkedin = d.linkedin || '';
+        perfil.carrera_1 = d.carrera1 || '';
+        perfil.carrera_2 = d.carrera2 || '';
+        perfil.carrera_3 = d.carrera3 || '';
+        perfil.carrera_4 = d.carrera4 || '';
+        perfil.carrera_5 = d.carrera5 || '';
+        perfil.carrera_6 = d.carrera6 || '';
+        perfil.carrera_7 = d.carrera7 || '';
+        perfil.turno_matutino = d.turnoMatutino ? 'TRUE' : '';
+        perfil.turno_vespertino = d.turnoVespertino ? 'TRUE' : '';
+        perfil.turno_semi_escolarizado = d.turnoSemiEscolarizado ? 'TRUE' : '';
+        perfil.turno_sabatino = d.turnoSabatino ? 'TRUE' : '';
+        perfil.turno_distancia = d.turnoDistancia ? 'TRUE' : '';
+        perfil.modalidad = d.modalidad || '';
+        perfil.semestres = d.semestres || '';
+      }
+    }
+
+    // 3. Si es DOCENTE, enrichir con TeacherProfile
+    if (rol === 'DOCENTE') {
+      const tResp = await fetch(`${LOCAL_API_URL}/api/teacher-profile/${encodeURIComponent(email)}`);
+      const tRes = await tResp.json();
+      if (tRes?.ok && tRes.profile) {
+        const t = tRes.profile;
+        perfil.id_empleado = t.idEmpleado || '';
+        perfil.phone = t.phone || '';
+        perfil.bio = t.bio || '';
+        perfil.curp = t.curp || '';
+        perfil.birth_date = t.birthDate || '';
+        perfil.degree = t.degree || '';
+        perfil.experience_years = t.experienceYears || 0;
+        perfil.specialties = t.specialties || '';
+        perfil.certifications = t.certifications || '';
+        perfil.institution_code = t.institutionCode || '';
+        perfil.director_email = t.directorEmail || '';
+      }
+    }
+
+    // 4. Si es ALUMNO, enrichir con StudentProfile
+    if (rol === 'ALUMNO') {
+      const sResp = await fetch(`${LOCAL_API_URL}/api/student-profile/${encodeURIComponent(email)}`);
+      const sRes = await sResp.json();
+      if (sRes?.ok && sRes.profile) {
+        const s = sRes.profile;
+        perfil.student_id = s.studentId || '';
+        perfil.phone = s.phone || '';
+        perfil.institution_code = s.institutionCode || '';
+        perfil.director_email = s.directorEmail || '';
+        perfil.bio = s.bio || '';
+        perfil.curp = s.curp || '';
+        perfil.birth_date = s.birthDate || '';
+        perfil.numero_control = s.numeroControl || '';
+        perfil.carrera = s.carrera || '';
+        perfil.turno = s.turno || '';
+        perfil.semestre = s.semestre || '';
+        perfil.modulo_tec = s.moduloTec || '';
+        perfil.nivel_ingles = s.nivelIngles || '';
+
+        // Cargar datos del director vinculado
+        if (s.directorEmail) {
+          try {
+            const dResp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(s.directorEmail)}`);
+            const dRes = await dResp.json();
+            if (dRes?.ok && dRes.profile) {
+              const d = dRes.profile;
+              perfil.dir_institution_name = d.institutionName || '';
+              perfil.dir_institution_type = d.institutionType || '';
+              perfil.dir_institution_logo = d.institutionLogo || '';
+              perfil.dir_slogan = d.slogan || '';
+              perfil.dir_inst_phone = d.instPhone || '';
+              perfil.dir_inst_email = d.instEmail || '';
+              perfil.dir_address = d.address || '';
+              perfil.dir_institution_code = d.institutionCode || '';
+              perfil.dir_carreras = [d.carrera1, d.carrera2, d.carrera3, d.carrera4, d.carrera5, d.carrera6, d.carrera7].filter(Boolean);
+              perfil.dir_turnos = [
+                d.turnoMatutino ? 'MATUTINO' : null,
+                d.turnoVespertino ? 'VESPERTINO' : null,
+                d.turnoSemiEscolarizado ? 'SEMI-ESCOLARIZADO' : null,
+                d.turnoSabatino ? 'SABATINO' : null,
+                d.turnoDistancia ? 'DISTANCIA / EN LÍNEA' : null,
+              ].filter(Boolean);
+              perfil.dir_modalidad = d.modalidad || '';
+            }
+          } catch { /* director profile not available */ }
+        }
+      }
+    }
+
+    // 5. Si es DOCENTE, enrichir con datos del director vinculado
+    if (rol === 'DOCENTE' && perfil.director_email) {
+      try {
+        const dResp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(perfil.director_email as string)}`);
+        const dRes = await dResp.json();
+        if (dRes?.ok && dRes.profile) {
+          const d = dRes.profile;
+          perfil.dir_institution_name = d.institutionName || '';
+          perfil.dir_institution_type = d.institutionType || '';
+          perfil.dir_institution_logo = d.institutionLogo || '';
+          perfil.dir_slogan = d.slogan || '';
+          perfil.dir_inst_phone = d.instPhone || '';
+          perfil.dir_inst_email = d.instEmail || '';
+          perfil.dir_address = d.address || '';
+          perfil.dir_institution_code = d.institutionCode || '';
+          perfil.dir_carreras = [d.carrera1, d.carrera2, d.carrera3, d.carrera4, d.carrera5, d.carrera6, d.carrera7].filter(Boolean);
+          perfil.dir_turnos = [
+            d.turnoMatutino ? 'MATUTINO' : null,
+            d.turnoVespertino ? 'VESPERTINO' : null,
+            d.turnoSemiEscolarizado ? 'SEMI-ESCOLARIZADO' : null,
+            d.turnoSabatino ? 'SABATINO' : null,
+            d.turnoDistancia ? 'DISTANCIA / EN LÍNEA' : null,
+          ].filter(Boolean);
+          perfil.dir_modalidad = d.modalidad || '';
+        }
+      } catch { /* director profile not available */ }
+    }
+
+    return perfil;
   } catch { return null; }
 }
 
@@ -467,15 +643,57 @@ export interface UploadAvatarResult {
   fileId?: string;
   code?: string;
   error?: string;
+  /** Origen del archivo: Supabase Storage (primario) o Google Drive (fallback) */
+  provider?: 'supabase' | 'drive';
 }
 
-/** Sube imagen (base64) al Drive del usuario y actualiza el avatar en el perfil */
+/**
+ * Sube imagen (base64) para la ID Card institucional.
+ * 1) PRIMARIO: Supabase Storage (bucket TECLINGO INGLES IMAGENES) vía backend local.
+ * 2) FALLBACK: flujo anterior de Google Drive (Apps Script) si Supabase no está configurado.
+ * folder: 'avatars' (foto de usuario) | 'logos' (logo institucional)
+ */
 export async function uploadAvatar(
   email: string,
   imageBase64: string,
   fileName: string = 'avatar.jpg',
-  mimeType: string = 'image/jpeg'
+  mimeType: string = 'image/jpeg',
+  folder: 'avatars' | 'logos' | 'imagenes' = 'avatars'
 ): Promise<UploadAvatarResult> {
+  let lastSupabaseError = '';
+
+  // 1) PRIMARIO — Supabase Storage vía backend local
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/supabase-upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.toLowerCase().trim(),
+        imageBase64,
+        fileName,
+        mimeType,
+        folder,
+      }),
+    });
+    const res = await resp.json().catch(() => null);
+    if (res?.ok && (res as any).fileUrl) {
+      return {
+        ok: true,
+        fileUrl: (res as any).fileUrl,
+        fileId: (res as any).fileId,
+        provider: 'supabase',
+      };
+    }
+    // Cualquier fallo de Supabase (no configurado, RLS, bucket, red) → fallback a Drive
+    console.warn('[Identity] Supabase upload no disponible:', res?.error || resp.status);
+    lastSupabaseError = String(res?.error || `http_${resp.status}`);
+  } catch (err) {
+    // Backend local inalcanzable → fallback a Drive
+    console.warn('[Identity] Backend local inalcanzable para Supabase:', err);
+    lastSupabaseError = 'backend_local_inalcanzable';
+  }
+
+  // 2) FALLBACK — Google Drive vía Apps Script (flujo anterior)
   try {
     const res = await postAlLake({
       action: 'uploadAvatar',
@@ -485,12 +703,20 @@ export async function uploadAvatar(
       mimeType,
     }, 30000); // 30s timeout para archivos grandes
     if (res?.ok) {
-      return { ok: true, fileUrl: (res as any).fileUrl, fileId: (res as any).fileId };
+      return {
+        ok: true,
+        fileUrl: (res as any).fileUrl,
+        fileId: (res as any).fileId,
+        provider: 'drive',
+      };
     }
-    return { ok: false, code: res?.code, error: res?.error };
+    // Ambos almacenamientos fallaron: se reportan los dos motivos
+    const dual = [lastSupabaseError, res?.error || res?.code].filter(Boolean).join(' | ');
+    return { ok: false, code: res?.code, error: dual || 'upload_failed', provider: 'drive' };
   } catch (err) {
     console.warn('[Identity] uploadAvatar error:', err);
-    return { ok: false, error: 'drive_unreachable' };
+    const dual = [lastSupabaseError, 'drive_unreachable'].filter(Boolean).join(' | ');
+    return { ok: false, error: dual, provider: 'drive' };
   }
 }
 
@@ -604,21 +830,27 @@ export async function uploadCertificationDocument(
   role: string = 'DOCENTE'
 ): Promise<UploadCertificationResult> {
   try {
-    const res = await postAlLake({
-      action: 'uploadCertification',
-      email: email.toLowerCase().trim(),
-      fileBase64,
-      fileName,
-      mimeType,
-      role: role.toUpperCase(),
-    }, 45000); // 45s timeout para archivos grandes
-    if (res?.ok) {
-      return { ok: true, fileUrl: (res as any).fileUrl, fileId: (res as any).fileId };
+    // Sube el documento al endpoint real de Supabase Storage.
+    // El backend acepta imágenes + PDFs + Office (ver /api/supabase-upload).
+    const resp = await fetch(`${LOCAL_API_URL}/api/supabase-upload`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.toLowerCase().trim(),
+        imageBase64: fileBase64,
+        fileName,
+        mimeType,
+        folder: 'docs', // bucket path: docs/<email>/...
+      }),
+    });
+    const res = await resp.json().catch(() => ({}));
+    if (res?.ok && res.fileUrl) {
+      return { ok: true, fileUrl: res.fileUrl, fileId: res.fileId };
     }
-    return { ok: false, error: res?.error || 'upload_failed' };
+    return { ok: false, error: res?.error || `http_${resp.status}` };
   } catch (err) {
     console.warn('[Identity] uploadCertificationDocument error:', err);
-    return { ok: false, error: 'drive_unreachable' };
+    return { ok: false, error: 'supabase_unreachable' };
   }
 }
 
@@ -711,13 +943,14 @@ export async function listarUsuarios(
   buscar: string = ''
 ): Promise<UsuarioComunidad[]> {
   try {
-    const res = await postAlLake({
-      action: 'listarUsuarios',
-      filtro,
-      buscar
-    }, 15000);
-    if (res?.ok && Array.isArray((res as any).usuarios)) {
-      return (res as any).usuarios as UsuarioComunidad[];
+    const params = new URLSearchParams();
+    if (filtro !== 'TODOS') params.set('filtro', filtro);
+    if (buscar) params.set('buscar', buscar);
+    const qs = params.toString();
+    const resp = await fetch(`${LOCAL_API_URL}/api/users-list${qs ? '?' + qs : ''}`);
+    const res = await resp.json();
+    if (res?.ok && Array.isArray(res.usuarios)) {
+      return res.usuarios as UsuarioComunidad[];
     }
     return [];
   } catch {
@@ -827,24 +1060,32 @@ export async function obtenerConfigAcademica(
   args: { email: string; director_email?: string }
 ): Promise<{ ok: boolean; institution_type?: string; carreras?: string[]; turnos?: string[]; modalidad?: string; defaults?: boolean; error?: string }> {
   try {
-    const res = await postAlLake({
-      action: 'obtenerConfigAcademica',
-      email: args.email.toLowerCase().trim(),
-      director_email: args.director_email?.toLowerCase().trim() || args.email.toLowerCase().trim()
-    }, 15000);
-    if (res?.ok) {
+    const directorEmail = args.director_email?.toLowerCase().trim() || args.email.toLowerCase().trim();
+    const resp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(directorEmail)}`);
+    const res = await resp.json();
+    if (res?.ok && res.profile) {
+      const d = res.profile;
+      const turnos: string[] = [];
+      if (d.turnoMatutino) turnos.push('MATUTINO');
+      if (d.turnoVespertino) turnos.push('VESPERTINO');
+      if (d.turnoSemiEscolarizado) turnos.push('SEMI-ESCOLARIZADO');
+      if (d.turnoSabatino) turnos.push('SABATINO');
+      if (d.turnoDistancia) turnos.push('DISTANCIA / EN LÍNEA');
+
+      const carreras = [d.carrera1, d.carrera2, d.carrera3, d.carrera4, d.carrera5, d.carrera6, d.carrera7].filter(Boolean);
+
       return {
         ok: true,
-        institution_type: (res as any).institution_type,
-        carreras: (res as any).carreras || [],
-        turnos: (res as any).turnos || [],
-        modalidad: (res as any).modalidad,
-        defaults: (res as any).defaults
+        institution_type: d.institutionType || undefined,
+        carreras,
+        turnos,
+        modalidad: d.modalidad || undefined,
+        defaults: false,
       };
     }
-    return { ok: false, error: (res as any).error };
+    return { ok: false, error: 'director_not_found' };
   } catch {
-    return { ok: false, error: 'lake_unreachable' };
+    return { ok: false, error: 'api_unreachable' };
   }
 }
 
@@ -852,9 +1093,17 @@ export async function obtenerConfigAcademica(
 // GRUPOS DE INGLÉS (CLE)
 // ============================================================
 
+export interface SesionHorario {
+  id?: string;
+  horaInicio: string;
+  horaFin: string;
+  dias: string;
+  orden?: number;
+}
+
 export interface GrupoIngles {
   grupo_id: string;
-  code_id: string;
+  code_id?: string;
   nombre: string;
   grupo: string;
   nivel: string;
@@ -862,13 +1111,13 @@ export interface GrupoIngles {
   turno: string;
   docente_id: string;
   docente_email: string;
-  horario: string;
-  dias: string;
+  director_email?: string;
   capacidad: number;
   alumnos_inscritos: number;
   status: string;
   created_at: string;
   updated_at: string;
+  sesiones?: SesionHorario[];
 }
 
 export interface MiembroGrupo {
@@ -881,35 +1130,54 @@ export interface MiembroGrupo {
   fecha_asignacion: string;
   asignado_por: string;
   activo: string;
+  // REGLA UNIVERSAL: imagen y datos académicos del usuario (credenciales visuales)
+  avatar?: string | null;
+  numero_control?: string | null;
+  nivel_ingles?: string | null;
+  carrera?: string | null;
+  semestre?: string | null;
 }
 
 export async function crearGrupoIngles(
   email: string,
-  data: { nombre: string; grupo?: string; nivel: string; carrera?: string; turno?: string; horario?: string; dias?: string; capacidad?: number }
+  data: { nombre: string; grupo?: string; nivel: string; carrera?: string; turno?: string; sesiones?: SesionHorario[]; horario?: string; dias?: string; capacidad?: number }
 ): Promise<IdentidadResultado & { grupo_id?: string; code_id?: string }> {
   try {
-    const res = await postAlLake({
-      action: 'crearGrupoIngles',
-      email: email.toLowerCase().trim(),
-      ...data
-    }, 15000);
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim(), ...data }),
+    });
+    const res = await resp.json();
     if (res?.ok) {
-      return { ok: true, grupo_id: (res as any).grupo_id, code_id: (res as any).code_id };
+      return { ok: true, grupo_id: res.grupo_id, code_id: res.code_id };
     }
-    return { ok: false, error: (res as any).error };
+    return { ok: false, error: res?.error };
   } catch {
-    return { ok: false, error: 'lake_unreachable' };
+    return { ok: false, error: 'api_unreachable' };
   }
 }
 
 export async function listarGruposIngles(email: string): Promise<GrupoIngles[]> {
   try {
-    const res = await postAlLake({
-      action: 'listarGruposIngles',
-      email: email.toLowerCase().trim()
-    }, 15000);
-    if (res?.ok && Array.isArray((res as any).grupos)) {
-      return (res as any).grupos as GrupoIngles[];
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups/${encodeURIComponent(email.toLowerCase().trim())}`);
+    const res = await resp.json();
+    if (res?.ok && Array.isArray(res.grupos)) {
+      return res.grupos as GrupoIngles[];
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
+/** Lista TODOS los grupos disponibles (para alumnos — sin filtro por director) */
+export async function listarGruposDisponibles(): Promise<GrupoIngles[]> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups-available`);
+    const res = await resp.json();
+    if (res?.ok && Array.isArray(res.grupos)) {
+      return res.grupos as GrupoIngles[];
     }
     return [];
   } catch {
@@ -921,16 +1189,16 @@ export async function asignarDocenteAGrupo(
   email: string, grupoId: string, docenteEmail: string
 ): Promise<IdentidadResultado> {
   try {
-    const res = await postAlLake({
-      action: 'asignarDocenteAGrupo',
-      email: email.toLowerCase().trim(),
-      grupo_id: grupoId,
-      docente_email: docenteEmail.toLowerCase().trim()
-    }, 15000);
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups/${grupoId}/assign-teacher`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ docente_email: docenteEmail.toLowerCase().trim() }),
+    });
+    const res = await resp.json();
     if (res?.ok) return { ok: true };
-    return { ok: false, error: (res as any).error };
+    return { ok: false, error: res?.error };
   } catch {
-    return { ok: false, error: 'lake_unreachable' };
+    return { ok: false, error: 'api_unreachable' };
   }
 }
 
@@ -938,17 +1206,18 @@ export async function unirseAGrupo(
   email: string, codeId: string
 ): Promise<IdentidadResultado & { grupo_id?: string; nombre?: string; mensaje?: string }> {
   try {
-    const res = await postAlLake({
-      action: 'unirseAGrupo',
-      email: email.toLowerCase().trim(),
-      code_id: codeId.trim()
-    }, 15000);
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups/join`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.toLowerCase().trim(), code_id: codeId.trim() }),
+    });
+    const res = await resp.json();
     if (res?.ok) {
-      return { ok: true, grupo_id: (res as any).grupo_id, nombre: (res as any).nombre };
+      return { ok: true, grupo_id: res.grupo_id, nombre: res.nombre };
     }
-    return { ok: false, error: (res as any).error, mensaje: (res as any).mensaje };
+    return { ok: false, error: res?.error, mensaje: res?.error };
   } catch {
-    return { ok: false, error: 'lake_unreachable' };
+    return { ok: false, error: 'api_unreachable' };
   }
 }
 
@@ -956,13 +1225,10 @@ export async function obtenerMiembrosDeGrupo(
   email: string, grupoId: string
 ): Promise<MiembroGrupo[]> {
   try {
-    const res = await postAlLake({
-      action: 'obtenerMiembrosDeGrupo',
-      email: email.toLowerCase().trim(),
-      grupo_id: grupoId
-    }, 15000);
-    if (res?.ok && Array.isArray((res as any).miembros)) {
-      return (res as any).miembros as MiembroGrupo[];
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups/${grupoId}/members`);
+    const res = await resp.json();
+    if (res?.ok && Array.isArray(res.miembros)) {
+      return res.miembros as MiembroGrupo[];
     }
     return [];
   } catch {
@@ -974,26 +1240,23 @@ export async function eliminarGrupoIngles(
   email: string, grupoId: string
 ): Promise<IdentidadResultado> {
   try {
-    const res = await postAlLake({
-      action: 'eliminarGrupoIngles',
-      email: email.toLowerCase().trim(),
-      grupo_id: grupoId
-    }, 15000);
+    const resp = await fetch(`${LOCAL_API_URL}/api/english-groups/${grupoId}`, {
+      method: 'DELETE',
+    });
+    const res = await resp.json();
     if (res?.ok) return { ok: true };
-    return { ok: false, error: (res as any).error };
+    return { ok: false, error: res?.error };
   } catch {
-    return { ok: false, error: 'lake_unreachable' };
+    return { ok: false, error: 'api_unreachable' };
   }
 }
 
 export async function misGruposIngles(email: string): Promise<GrupoIngles[]> {
   try {
-    const res = await postAlLake({
-      action: 'misGruposIngles',
-      email: email.toLowerCase().trim()
-    }, 15000);
-    if (res?.ok && Array.isArray((res as any).grupos)) {
-      return (res as any).grupos as GrupoIngles[];
+    const resp = await fetch(`${LOCAL_API_URL}/api/my-english-groups/${encodeURIComponent(email.toLowerCase().trim())}`);
+    const res = await resp.json();
+    if (res?.ok && Array.isArray(res.grupos)) {
+      return res.grupos as GrupoIngles[];
     }
     return [];
   } catch {
@@ -1028,19 +1291,23 @@ export async function registrarAsistencia(
   email: string, grupoId: string, registros: RegistroAsistencia[], fecha?: string
 ): Promise<IdentidadResultado & { registrados?: number }> {
   try {
-    const res = await postAlLake({
-      action: 'registrarAsistencia',
-      email: email.toLowerCase().trim(),
-      grupo_id: grupoId,
-      registros,
-      fecha: fecha || new Date().toISOString().slice(0, 10)
-    }, 15000);
+    const resp = await fetch(`${LOCAL_API_URL}/api/attendance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: email.toLowerCase().trim(),
+        grupo_id: grupoId,
+        registros,
+        fecha: fecha || new Date().toISOString().slice(0, 10),
+      }),
+    });
+    const res = await resp.json();
     if (res?.ok) {
-      return { ok: true, registrados: (res as any).registrados };
+      return { ok: true, registrados: res.registrados };
     }
-    return { ok: false, error: (res as any).error };
+    return { ok: false, error: res?.error };
   } catch {
-    return { ok: false, error: 'lake_unreachable' };
+    return { ok: false, error: 'server_unreachable' };
   }
 }
 
@@ -1048,19 +1315,89 @@ export async function obtenerAsistenciaGrupo(
   email: string, grupoId: string, fecha?: string
 ): Promise<RegistroAsistenciaBackend[]> {
   try {
-    const res = await postAlLake({
-      action: 'obtenerAsistenciaGrupo',
-      email: email.toLowerCase().trim(),
-      grupo_id: grupoId,
-      fecha: fecha || new Date().toISOString().slice(0, 10)
-    }, 15000);
-    if (res?.ok && Array.isArray((res as any).asistencias)) {
-      return (res as any).asistencias as RegistroAsistenciaBackend[];
+    const params = new URLSearchParams();
+    if (fecha) params.set('fecha', fecha);
+    const qs = params.toString();
+    const resp = await fetch(`${LOCAL_API_URL}/api/attendance/${encodeURIComponent(grupoId)}${qs ? '?' + qs : ''}`);
+    const res = await resp.json();
+    if (res?.ok && Array.isArray(res.asistencias)) {
+      return res.asistencias as RegistroAsistenciaBackend[];
     }
     return [];
   } catch {
     return [];
   }
+}
+
+/** Obtiene datos de la credencial DINER desde PostgreSQL */
+export async function obtenerCredencial(email: string): Promise<Record<string, unknown> | null> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/credential/${encodeURIComponent(email)}`);
+    const res = await resp.json();
+    if (res?.ok && res.credential) return res.credential;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Guardar perfil de Director en PostgreSQL */
+export async function guardarDirectorProfile(email: string, data: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(email)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const res = await resp.json();
+    return { ok: Boolean(res?.ok), error: res?.error };
+  } catch { return { ok: false, error: 'api_unreachable' }; }
+}
+
+/** Guardar perfil de Docente en PostgreSQL */
+export async function guardarTeacherProfile(email: string, data: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/teacher-profile/${encodeURIComponent(email)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const res = await resp.json();
+    return { ok: Boolean(res?.ok), error: res?.error };
+  } catch { return { ok: false, error: 'api_unreachable' }; }
+}
+
+/** Guardar perfil de Estudiante en PostgreSQL */
+export async function guardarStudentProfile(email: string, data: Record<string, unknown>): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/student-profile/${encodeURIComponent(email)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const res = await resp.json();
+    return { ok: Boolean(res?.ok), error: res?.error };
+  } catch { return { ok: false, error: 'api_unreachable' }; }
+}
+
+/** Obtener perfil de Director desde PostgreSQL */
+export async function obtenerDirectorProfile(email: string): Promise<Record<string, unknown> | null> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(email)}`);
+    const res = await resp.json();
+    if (res?.ok && res.profile) return res.profile;
+    return null;
+  } catch { return null; }
+}
+
+/** Obtener perfil de Docente desde PostgreSQL */
+export async function obtenerTeacherProfile(email: string): Promise<Record<string, unknown> | null> {
+  try {
+    const resp = await fetch(`${LOCAL_API_URL}/api/teacher-profile/${encodeURIComponent(email)}`);
+    const res = await resp.json();
+    if (res?.ok && res.profile) return res.profile;
+    return null;
+  } catch { return null; }
 }
 
 const identityService = {
@@ -1071,6 +1408,12 @@ const identityService = {
   loginGoogle,
   finalizarRegistroGoogle,
   obtenerPerfil,
+  obtenerCredencial,
+  guardarDirectorProfile,
+  guardarTeacherProfile,
+  guardarStudentProfile,
+  obtenerDirectorProfile,
+  obtenerTeacherProfile,
   logActividadGlobal,
   registrarMeta,
   obtenerMetas,

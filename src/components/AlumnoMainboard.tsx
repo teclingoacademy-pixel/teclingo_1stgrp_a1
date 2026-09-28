@@ -56,10 +56,11 @@ import { ProgressMap } from './ProgressMap';
 import { ADNTest } from './tools/ADNTest';
 import { ExtracurricularHub } from './ExtracurricularHub';
 import { ExtracurricularModal } from './ExtracurricularModal';
+import { WhatsAppButton, WHATSAPP_TEACHER_MESSAGE } from './WhatsAppButton';
 import { useAppContext } from '../context/AppContext';
+import { useStudentProgress } from '../hooks/useStudentProgress';
 import { useMemo } from 'react';
 import { LibroVirtual } from './LibroVirtual';
-import { SafeZoneModule } from './SafeZoneModule';
 import { ProfileOnboardingModal, isProfileComplete } from './ProfileOnboardingModal';
 import { obtenerPerfilCompleto } from '../services/identityService';
 
@@ -90,6 +91,22 @@ interface AlumnoMainboardProps {
   const [isADNDone, setIsADNDone] = useState(false);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [studentProfileData, setStudentProfileData] = useState<Record<string, unknown>>({});
+  const [selectedLessonId, setSelectedLessonId] = useState<string>('A1_C01');
+  const { currentWeek: studentCurrentWeek } = useStudentProgress(userEmail || undefined);
+
+  // FIX 2026-09-26: Navegacion a clase especifica
+  const handleSelectClass = (claseId: string) => {
+    setSelectedLessonId(claseId);
+    setCurrentView('libro-virtual');
+  };
+
+  // FIX 2026-09-26: Continuar Ruta -> ultima leccion con progreso
+  const handleContinueRoute = () => {
+    const week = studentCurrentWeek && studentCurrentWeek > 0 ? studentCurrentWeek : 1;
+    const claseId = 'A1_C' + String(week).padStart(2, '0');
+    setSelectedLessonId(claseId);
+    setCurrentView('libro-virtual');
+  };
 
   const handleNavigateToFullChat = (userId: string) => {
     setPreselectedChatId(userId);
@@ -112,8 +129,7 @@ interface AlumnoMainboardProps {
         if (perfil) {
           const profileFields = {
             name: perfil.nombre || '',
-            studentId: perfil.student_id || '',
-            // career / shift / semestre ya no existen en esta versión exclusiva de inglés
+            numeroControl: perfil.numero_control || '',
             moduloTec: perfil.modulo_tec || '',
           };
           setStudentProfileData(profileFields);
@@ -143,7 +159,6 @@ interface AlumnoMainboardProps {
 
     { id: 'progress-map', label: t('progress_map'), icon: Map, badge: 'IA', category: 'Operaciones', isPrincipal: true },
     { id: 'libro-virtual', label: 'LIBRO VIRTUAL', icon: BookOpen, badge: 'A1', category: 'Operaciones' },
-    { id: 'safe-zone', label: 'SAFEZONE AI', icon: Shield, badge: 'CONFIDENCIAL', category: 'Operaciones' },
     { id: 'pdp', label: t('pdp'), icon: BarChart3, category: 'Operaciones' },
 
     { id: 'ai-support', label: t('ai_support'), icon: Sparkles, badge: t('new'), category: 'Monitoreo & Innovación', isPrincipal: true },
@@ -217,6 +232,13 @@ interface AlumnoMainboardProps {
                       <h1 className="text-3xl md:text-4xl font-black text-white bevel-text uppercase tracking-tight">Good Morning.</h1>
                     </div>
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+                        <WhatsAppButton
+                          label="Teacher Online"
+                          sublabel="WhatsApp 8461108789"
+                          message={WHATSAPP_TEACHER_MESSAGE}
+                          iconSize={16}
+                          className="px-5 py-3.5"
+                        />
                         {globalEvents.filter(e => e.visibility.includes('GLOBAL') || e.visibility.includes('ALUMNO')).length > 0 && (
                           <div className="px-6 py-3 rounded-2xl bg-white/5 border border-white/5 flex items-center gap-4 hidden xl:flex">
                              <CalendarIcon size={16} className="text-[#DEFF9A]" />
@@ -229,7 +251,7 @@ interface AlumnoMainboardProps {
                           </div>
                         )}
                         <button 
-                         onClick={() => setCurrentView('progress-map')}
+                         onClick={handleContinueRoute}
                          className="flex items-center justify-center gap-3 px-6 py-4 md:py-3 rounded-2xl bg-[#DEFF9A]/10 border border-[#DEFF9A]/20 text-[#DEFF9A] text-[10px] font-black uppercase tracking-widest hover:bg-[#DEFF9A] hover:text-[#061a1a] transition-all"
                        >
                          Continuar Ruta <ChevronRight size={14} />
@@ -284,42 +306,6 @@ interface AlumnoMainboardProps {
                       </motion.div>
                     )}
 
-                    {/* 🚀 SAFEZONE CHAT (ENTORNO SEGURO) Featured Card */}
-                    <motion.div 
-                      initial={{ opacity: 0, scale: 0.95 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      transition={{ delay: 0.1 }}
-                      className="col-span-1 md:col-span-2 lg:col-span-12 p-6 md:p-8 rounded-[2.5rem] bg-gradient-to-r from-[#031d2a] via-[#052b3c] to-transparent border border-cyan-500/30 flex flex-col md:flex-row items-center md:justify-between gap-6 overflow-hidden relative group text-center md:text-left"
-                    >
-                      <div className="absolute top-0 right-0 w-48 h-48 bg-cyan-500/5 blur-[60px] -translate-y-1/2 translate-x-1/2 rounded-full" />
-                      
-                      <div className="flex flex-col md:flex-row items-center gap-6 relative z-10 w-full md:w-auto">
-                        <div className="w-16 h-16 rounded-[1.5rem] bg-gradient-to-br from-cyan-500/20 to-emerald-500/20 border border-cyan-500/30 flex items-center justify-center text-cyan-400 shadow-[0_0_30px_rgba(6,182,212,0.25)] shrink-0">
-                          <Shield size={32} />
-                        </div>
-                        <div className="text-left space-y-1.5 flex-1 animate-fadeIn">
-                          <div className="flex flex-wrap items-center gap-3 justify-center md:justify-start">
-                            <h4 className="text-white text-lg md:text-xl font-black uppercase tracking-tight">
-                              🚀 SAFEZONE CHAT <span className="text-cyan-400 font-mono">(ENTORNO SEGURO)</span>
-                            </h4>
-                            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-mono font-black border border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)] animate-pulse">
-                              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping inline-block shrink-0" />
-                              <span>[ ACCESO EN VIVO ]</span>
-                            </span>
-                          </div>
-                          <p className="text-white/60 text-[11px] md:text-xs font-medium leading-relaxed max-w-2xl">
-                            Práctica conversacional libre de juicios y a tu propio ritmo. Supera el miedo a hablar inglés con tutoría de inteligencia artificial confidencial.
-                          </p>
-                        </div>
-                      </div>
-                      
-                      <button 
-                        onClick={() => setCurrentView('safe-zone')}
-                        className="w-full md:w-auto px-8 py-4 bg-[#22d3ee] hover:bg-[#06b6d4] text-[#011425] rounded-2xl text-xs font-black uppercase tracking-widest hover:scale-105 active:scale-95 transition-all shadow-[0_10px_25px_rgba(34,211,238,0.25)] relative z-10 shrink-0 cursor-pointer"
-                      >
-                        Ingresar al Chat
-                      </button>
-                    </motion.div>
 
                     {/* Progress Card */}
                     <div className="col-span-1 md:col-span-2 lg:col-span-8">
@@ -428,13 +414,17 @@ interface AlumnoMainboardProps {
                   </div>
                 </div>
               ) : currentView === 'progress-map' ? (
-                <ProgressMap />
+                <div className="h-[calc(100vh-120px)]">
+                  <ProgressMap 
+                    studentEmail={userEmail || undefined}
+                    onBackToPDP={() => setCurrentView('pdp')}
+                    onSelectClass={handleSelectClass}
+                  />
+                </div>
               ) : currentView === 'libro-virtual' ? (
-                <LibroVirtual role="alumno" lessonId="N1-C01" />
-              ) : currentView === 'safe-zone' ? (
-                <SafeZoneModule />
+                <LibroVirtual role="alumno" lessonId={selectedLessonId} />
               ) : currentView === 'pdp' ? (
-                <PDPModule />
+                <PDPModule onOpenProgressMap={() => setCurrentView('progress-map')} />
               ) : currentView === 'grupo' ? (
                 <StudentGroup />
               ) : currentView === 'unirse-grupo' ? (
@@ -528,7 +518,7 @@ function EvidenceUploadSection({ userEmail }: EvidenceUploadSectionProps) {
   const [uploadStatus, setUploadStatus] = useState<'idle' | 'success' | 'error'>('idle');
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [selectedGrupoId, setSelectedGrupoId] = useState<string>('');
-  const [grupos, setGrupos] = useState<{ grupo_id: string; nombre: string; code_id: string }[]>([]);
+  const [grupos, setGrupos] = useState<{ grupo_id: string; nombre: string }[]>([]);
   const [loadingGrupos, setLoadingGrupos] = useState(true);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -542,7 +532,6 @@ function EvidenceUploadSection({ userEmail }: EvidenceUploadSectionProps) {
         setGrupos(misGrupos.map(g => ({
           grupo_id: g.grupo_id,
           nombre: g.nombre || `Grupo ${g.grupo}`,
-          code_id: g.code_id || g.grupo_id,
         })));
       } catch (err) {
         console.warn('[EvidenceUpload] Error loading groups:', err);
@@ -655,7 +644,7 @@ function EvidenceUploadSection({ userEmail }: EvidenceUploadSectionProps) {
                     <option value="" className="bg-[#061a1a]">-- Selecciona un grupo --</option>
                     {grupos.map(g => (
                       <option key={g.grupo_id} value={g.grupo_id} className="bg-[#061a1a]">
-                        {g.code_id} - {g.nombre}
+                        {g.nombre}
                       </option>
                     ))}
                   </select>

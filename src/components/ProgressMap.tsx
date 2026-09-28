@@ -3,278 +3,363 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  CheckCircle2, 
-  Trophy, 
-  Zap, 
-  Lock,
-  Flag,
-  Award,
-  Sparkles,
-  ChevronUp,
-  Target
-} from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
-import { GlassCard } from './GlassCard';
+import { useEffect, useRef, useMemo, type ReactNode } from 'react';
+import { motion } from 'motion/react';
+import { Trophy, Lock, Check, Sparkles, Target, ChevronRight, Star, Crown, Compass, Zap, Calendar, BookOpen, FileCheck2 } from 'lucide-react';
+import type { SemanaMalla } from '../types/workbook/malla';
+import { useStudentProgress } from '../hooks/useStudentProgress';
+import { useStudyPlan } from '../hooks/useStudyPlan';
 
-interface Node {
-  id: string;
-  label: string;
-  type: 'CLASS' | 'EXAM' | 'MILESTONE' | 'PIONEER';
-  status: 'COMPLETED' | 'PENDING' | 'LOCKED';
-  week: number;
-  description?: string;
-  speakingAccuracy?: number;
+interface ProgressMapProps {
+  studentEmail?: string;
+  currentWeek?: number;
+  onBackToPDP?: () => void;
+  onSelectClass?: (claseId: string) => void;
 }
 
-const mapData: Node[] = [
-  { id: '1', label: 'Start Nexus', type: 'MILESTONE', status: 'COMPLETED', week: 1, description: 'Protocolo de inducción TECLINGO.' },
-  { id: '2', label: 'AI Fundamentals', type: 'CLASS', status: 'COMPLETED', week: 2, description: 'Redes neuronales y procesamiento de lenguaje.', speakingAccuracy: 7.8 },
-  { id: '3', label: 'Projet Bravo', type: 'EXAM', status: 'COMPLETED', week: 3, description: 'Certificación inicial de fundamentos AI.', speakingAccuracy: 8.5 },
-  { id: '4', label: 'Mission Dallas VIP', type: 'CLASS', status: 'PENDING', week: 4, description: 'Construcción de narrativa compleja.' },
-  { id: '5', label: 'Knowledge Pulse', type: 'CLASS', status: 'PENDING', week: 5, description: 'Desafío en tiempo real en The Bridge.' },
-  { id: '6', label: 'Examen Maestro', type: 'EXAM', status: 'LOCKED', week: 6, description: 'Validación de autoridad académica.' },
-  { id: '7', label: 'Elite Summit', type: 'MILESTONE', status: 'LOCKED', week: 7, description: 'Cumbre de Excelencia Académica.' },
-];
+type NodeStatus = 'COMPLETED' | 'CURRENT' | 'LOCKED';
 
-export function ProgressMap() {
-  const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const [scrollY, setScrollY] = useState(0);
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  
-  // Set initial scroll to bottom
+export function ProgressMap({ studentEmail, currentWeek: propCurrentWeek, onBackToPDP, onSelectClass }: ProgressMapProps) {
+  const { currentWeek: derivedWeek, overallPercent, completedWeeks, data } = useStudentProgress(studentEmail);
+  const { weeks: apiWeeks, loading: weeksLoading } = useStudyPlan('S01');
+  const weeks: SemanaMalla[] = useMemo(() => {
+    return (apiWeeks || []).slice(0, 15).map((w: any) => ({
+      semana: w.semana,
+      fechas: w.fechas || '',
+      eje_tematico: w.eje_tematico || w.ejeTematico || '',
+      unidad_libro: w.unidad_libro || w.unidadLibro || '',
+      paginas: w.paginas || '',
+      kpi: w.kpi || '',
+      horas: (w.horas || []).map((h: any) => ({
+        hora: h.hora,
+        leccion: h.leccion,
+        enfoque: h.enfoque,
+      })),
+    }));
+  }, [apiWeeks]);
+  const currentWeek = propCurrentWeek ?? derivedWeek;
+  const scrollRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
-    }
-  }, []);
+    const c = scrollRef.current;
+    if (!c || !currentWeek) return;
+    const timer = setTimeout(() => {
+      const target = c.querySelector('[data-week="' + currentWeek + '"]') as HTMLElement | null;
+      if (target) target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 400);
+    return () => clearTimeout(timer);
+  }, [currentWeek]);
 
-  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
-    setScrollY(e.currentTarget.scrollTop);
+  // FIX 2026-09-28: IDs migrados a N1-CXX. Mapeo real de semana → lecciones.
+  const WEEK_TO_LESSONS: Record<number, string[]> = {
+    1:  ['N1-C00', 'N1-C01'],
+    2:  ['N1-C02', 'N1-C03'],
+    3:  ['N1-C04', 'N1-C05'],
+    4:  [],
+    5:  ['N1-C06', 'N1-C07'],
+    6:  ['N1-C08', 'N1-C09'],
+    7:  ['N1-C10', 'N1-C11'],
+    8:  [],
+    9:  ['N1-C12', 'N1-C13'],
+    10: ['N1-C14', 'N1-C15'],
+    11: ['N1-C16', 'N1-C17'],
+    12: ['N1-C18', 'N1-C19'],
+    13: ['N1-C20', 'N1-C21'],
+    14: ['N1-C25', 'N1-C26'],
+    15: ['N1-C28', 'N1-C29'],
+  };
+  const EXAM_WEEKS = [4, 8, 14];
+  const CLOSING_WEEK = 15;
+
+  const getProgress = (weekNum: number): number => {
+    const lessons = WEEK_TO_LESSONS[weekNum] || [];
+    if (lessons.length === 0) return 0;
+    const sum = lessons.reduce((acc, lid) => acc + (data?.byLesson?.[lid]?.percent ?? 0), 0);
+    return Math.round(sum / lessons.length);
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    const { clientX, clientY } = e;
-    const { innerWidth, innerHeight } = window;
-    // Calculate rotation based on mouse position (-1 to 1)
-    const x = (clientX / innerWidth - 0.5) * 2;
-    const y = (clientY / innerHeight - 0.5) * 2;
-    setMousePos({ x, y });
+  // Fase Cero obligatoria: bloquea todo hasta completarla
+  const c00Percent = data?.byLesson?.['N1-C00']?.percent ?? 0;
+  const c00Done = c00Percent >= 100;
+
+  const getStatus = (weekNum: number): NodeStatus => {
+    if (!c00Done && weekNum !== 1) return 'LOCKED';
+    const prog = getProgress(weekNum);
+    if (prog >= 100 || completedWeeks.includes(weekNum)) return 'COMPLETED';
+    if (weekNum === currentWeek) return 'CURRENT';
+    if (weekNum < currentWeek) return 'COMPLETED';
+    return 'LOCKED';
   };
+
+  const completedCount = weeks.filter(w => getStatus(w.semana) === 'COMPLETED').length;
+  const xpTotal = Object.values(data?.byLesson ?? {}).reduce((acc, l) => acc + (l.points ?? 0), 0);
 
   return (
-    <div 
-      onMouseMove={handleMouseMove}
-      className="relative h-full flex flex-col overflow-hidden bg-[#0A0D10]"
-    >
-      {/* Background Layers */}
-      <div className="absolute inset-0 z-0 pointer-events-none overflow-hidden">
-        {/* Deep Galactic Base */}
-        <div className="absolute inset-x-0 -bottom-[100%] h-[300%] bg-[#0A0D10]" />
-        
-        {/* Layer 1: Metal Texture */}
-        <div className="absolute inset-0 opacity-[0.03] bg-[url('https://www.transparenttextures.com/patterns/carbon-fibre.png')]" />
-        
-        {/* Layer 2: 3D Grid Path Floor */}
-        <div 
-          className="absolute inset-x-0 -bottom-[50%] h-[200%] opacity-[0.12] transition-transform duration-100 ease-out"
-          style={{ 
-            backgroundImage: `linear-gradient(rgba(56, 189, 248, 0.2) 1px, transparent 1px), linear-gradient(90deg, rgba(56, 189, 248, 0.2) 1px, transparent 1px)`,
-            backgroundSize: '120px 120px',
-            transform: `perspective(1000px) rotateX(${60 + mousePos.y * 5}deg) rotateY(${mousePos.x * 2}deg) translateY(${scrollY * 0.15}px)`,
-            transformOrigin: 'center center'
-          }} 
-        />
+    <div className="relative w-full h-full bg-[#050a0d] text-white overflow-hidden">
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[600px] rounded-full bg-[#38BDF8]/5 blur-[120px]" />
+        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-[600px] h-[400px] rounded-full bg-[#00F5D4]/5 blur-[120px]" />
+      </div>
 
-        {/* Technical Schematics Decoration */}
-        <div className="absolute inset-0 z-0 opacity-[0.08] pointer-events-none overflow-hidden">
-           <div className="absolute top-[10%] left-[5%] w-96 h-64 border border-[#38BDF8]/20 p-4 font-mono text-[6px] text-[#38BDF8] whitespace-pre-wrap leading-tight italic">
-              {`// AI FUNDAMENTALS MODULE\n// PROTOCOL: NEURAL_SYNC_v4\n\nif (knowledge >= threshold) {\n  execute_ascension();\n  sync_profile(docente_id);\n}\n\n// MAPPING_LOG: ${new Date().toISOString()}`}
-           </div>
-           <div className="absolute top-[40%] right-[10%] opacity-40">
-              <svg width="400" height="400" viewBox="0 0 400 400" fill="none">
-                 <circle cx="200" cy="200" r="180" stroke="#38BDF8" strokeWidth="0.5" strokeDasharray="10 10" />
-                 <circle cx="200" cy="200" r="100" stroke="#38BDF8" strokeWidth="1" />
-                 <path d="M 200 20 L 200 380 M 20 200 L 380 200" stroke="#38BDF8" strokeWidth="0.5" />
-                 <text x="210" y="40" fill="#38BDF8" fontSize="8" fontWeight="bold">UPPER_TIER</text>
-              </svg>
-           </div>
-           <div className="absolute top-[70%] left-[15%] w-64 h-64 border border-[#DEFF9A]/10 rounded-full flex items-center justify-center">
-              <div className="w-32 h-32 border-2 border-dashed border-[#DEFF9A]/5 rounded-full animate-spin-slow" />
-           </div>
+      <div className="relative z-30 sticky top-0 backdrop-blur-xl bg-[#050a0d]/85 border-b border-[#00F5D4]/10">
+        <div className="max-w-5xl mx-auto px-4 sm:px-8 py-4">
+          <div className="flex flex-wrap items-center gap-3 justify-between">
+            <div className="flex items-center gap-3">
+              {onBackToPDP && (
+                <button
+                  onClick={onBackToPDP}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-[10px] font-black uppercase tracking-widest transition cursor-pointer"
+                >
+                  <ChevronRight size={12} className="rotate-180" />
+                  PDP
+                </button>
+              )}
+              <div>
+                <p className="text-[#00F5D4] text-[9px] font-black uppercase tracking-[0.4em]">Ascension Elite</p>
+                <h1 className="text-lg sm:text-2xl font-black uppercase tracking-tight italic leading-none">
+                  MISSION <span className="text-[#00F5D4]">MAP</span>
+                </h1>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <HudStat icon={<Compass size={12} />} value={completedCount + "/" + weeks.length} label="Semanas" color="#00F5D4" />
+              <HudStat icon={<Zap size={12} />} value={String(xpTotal)} label="XP" color="#38BDF8" />
+              <HudStat icon={<Target size={12} />} value={overallPercent + "%"} label="Avance" color="#FBBF24" />
+            </div>
+          </div>
+
+          <div className="mt-3 h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full bg-gradient-to-r from-[#38BDF8] via-[#00F5D4] to-[#DEFF9A] shadow-[0_0_10px_rgba(0,245,212,0.6)] transition-all duration-1000"
+              style={{ width: overallPercent + "%" }}
+            />
+          </div>
+
+          {!c00Done && (
+            <div className="mt-4 rounded-2xl border border-amber-400/40 bg-amber-500/10 p-3 sm:p-4 flex items-start gap-3">
+              <Lock size={16} className="text-amber-400 shrink-0 mt-0.5" />
+              <div className="text-left">
+                <p className="text-[10px] font-black uppercase tracking-widest text-amber-300">
+                  Fase Cero Obligatoria
+                </p>
+                <p className="text-[10px] font-medium text-white/60 leading-relaxed mt-0.5">
+                  Antes de acceder a las 15 semanas debes completar la Fase Cero ({c00Percent}%).
+                  Toca la Semana 01 para comenzar.
+                </p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* Start Nexus Marker */}
-      <div className="absolute top-32 left-16 z-30 pointer-events-none">
-         <motion.div 
-           initial={{ opacity: 0, x: -20 }}
-           whileInView={{ opacity: 1, x: 0 }}
-           className="flex flex-col items-center gap-6"
-         >
-            <div className="w-40 h-40 relative">
-               <motion.div 
-                 animate={{ rotate: 360 }}
-                 transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
-                 className="absolute inset-0 border border-dashed border-[#38BDF8]/30 rounded-full" 
-               />
-               <motion.div 
-                 animate={{ rotate: -360 }}
-                 transition={{ duration: 15, repeat: Infinity, ease: "linear" }}
-                 className="absolute inset-4 border border-[#38BDF8]/20 rounded-full" 
-               />
-               <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="w-24 h-24 bg-[#38BDF8] rounded-full blur-[40px] opacity-10" />
-                  <Target size={48} className="text-[#38BDF8] drop-shadow-[0_0_15px_#38BDF8]" />
-               </div>
-            </div>
-            <div className="text-center">
-               <h4 className="text-[#38BDF8] text-[10px] font-black uppercase tracking-[0.4em] mb-1">START NEXUS</h4>
-               <p className="text-white/30 text-[8px] font-bold uppercase tracking-widest italic">INICIAR EL CAMINO</p>
-            </div>
-         </motion.div>
-      </div>
-
-      {/* Goal Arch Marker */}
-      <div className="absolute top-32 right-32 z-30 pointer-events-none hidden xl:block">
-         <motion.div 
-           initial={{ opacity: 0, x: 20 }}
-           whileInView={{ opacity: 1, x: 0 }}
-           className="flex flex-col items-center gap-6"
-         >
-            <div className="w-48 h-32 relative">
-               <div className="absolute inset-0 border-t-2 border-x-2 border-[#DEFF9A]/40 rounded-t-full" />
-               <div className="absolute inset-0 flex items-center justify-center -translate-y-4">
-                  <div className="w-32 h-32 bg-[#DEFF9A] rounded-full blur-[60px] opacity-10" />
-                  <Trophy size={64} className="text-[#DEFF9A] drop-shadow-[0_0_20px_#DEFF9A]" />
-               </div>
-               <motion.div 
-                 animate={{ y: [0, -10, 0], opacity: [0.3, 1, 0.3] }}
-                 transition={{ duration: 3, repeat: Infinity }}
-                 className="absolute -top-6 left-1/2 -translate-x-1/2"
-               >
-                  <Sparkles size={32} className="text-[#DEFF9A]" />
-               </motion.div>
-            </div>
-            <div className="text-center">
-               <h4 className="text-[#DEFF9A] text-[10px] font-black uppercase tracking-[0.4em] mb-1">GOAL ARCH</h4>
-               <p className="text-white/30 text-[8px] font-bold uppercase tracking-widest italic">FINAL DEL SEMESTRE</p>
-            </div>
-         </motion.div>
-      </div>
-
-      <header className="relative z-40 p-12 pb-0">
-        <h2 className="text-[#38BDF8] text-[10px] font-black uppercase tracking-[0.6em] mb-2">ASCENSIÓN ÉLITE</h2>
-        <h1 className="text-5xl font-black text-white bevel-text uppercase tracking-tighter italic">MISSION MAP</h1>
-      </header>
-
-      {/* LCD Status Tracker */}
-      <div className="absolute top-12 right-12 z-[60]">
-        <motion.div className="bg-black/60 backdrop-blur-3xl border border-white/10 px-8 py-4 rounded-2xl flex items-center gap-6 shadow-[0_20px_40px_rgba(0,0,0,0.5)]">
-          <div className="space-y-0.5">
-            <p className="text-[#38BDF8] text-[8px] font-black uppercase tracking-[0.4em]">Protocolo Actual</p>
-            <p className="text-white text-[14px] font-black tracking-tight font-mono uppercase italic">ESTATUS: SEMANA 4</p>
-          </div>
-          <div className="w-3 h-3 rounded-full bg-[#38BDF8] shadow-[0_0_20px_#38BDF8] animate-pulse" />
-        </motion.div>
-      </div>
-
-      {/* 3D Path Ascension Area */}
-      <div 
-        ref={scrollContainerRef}
-        onScroll={handleScroll}
-        className="flex-1 overflow-y-auto custom-scrollbar relative z-30 pt-96"
-      >
-        <div 
-          className="relative max-w-5xl mx-auto h-[4000px] flex flex-col items-center gap-40 transition-all duration-300 transform-gpu"
-          style={{ 
-            perspective: '1500px',
-            transform: `rotateX(${20 + mousePos.y * 10}deg) rotateY(${mousePos.x * 5}deg)`,
-            transformOrigin: 'top center'
-          }}
-        >
-          {/* Central Neural Backbone */}
-          <div className="absolute left-1/2 -translate-x-1/2 h-full w-[2px] bg-gradient-to-b from-[#38BDF8]/40 via-[#38BDF8]/10 to-transparent shadow-[0_0_15px_#38BDF840]" />
-
-          {mapData.map((node, index) => {
-            const isCompleted = node.status === 'COMPLETED';
-            const isActive = node.status === 'PENDING';
-            const isLocked = node.status === 'LOCKED';
-
+      <div ref={scrollRef} className="relative z-20 h-[calc(100%-140px)] overflow-y-auto custom-scrollbar">
+        <div className="relative max-w-3xl mx-auto py-10 px-4">
+          {weeks.map((w, i) => {
+            const status = getStatus(w.semana);
+            const progress = getProgress(w.semana);
+            const prevUnit = i > 0 ? weeks[i - 1].unidad_libro : null;
+            const showUnitHeader = w.unidad_libro !== prevUnit;
             return (
-              <motion.div
-                key={node.id}
-                initial={{ opacity: 0, y: 100 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, margin: "-100px" }}
-                className={`relative flex items-center w-full ${index % 2 === 0 ? 'flex-row' : 'flex-row-reverse'}`}
-              >
-                {/* Node & Content Link Line */}
-                <div className={`w-1/2 h-[2px] bg-gradient-to-r ${index % 2 === 0 ? 'from-transparent to-[#38BDF8]/20' : 'from-[#38BDF8]/20 to-transparent'}`} />
-
-                {/* Main Node */}
-                <div className="relative group mx-8">
-                   {/* Glow Aura */}
-                   <div className={`absolute -inset-12 blur-[60px] opacity-10 rounded-full transition-opacity duration-700 ${
-                     isCompleted ? 'bg-[#4ADE80]' : isActive ? 'bg-[#38BDF8] opacity-20' : 'bg-white/5'
-                   }`} />
-
-                   <motion.button
-                     whileHover={{ scale: 1.1, rotateZ: index % 2 === 0 ? 5 : -5 }}
-                     className={`relative w-40 h-40 rounded-[3rem] border-2 flex items-center justify-center transition-all duration-700 shadow-2xl ${
-                       isCompleted ? 'bg-[#4ADE80]/10 border-[#4ADE80] text-[#4ADE80]' :
-                       isActive ? 'bg-[#38BDF8]/20 border-[#38BDF8] text-[#38BDF8] ring-4 ring-[#38BDF8]/20' :
-                       'bg-black/60 border-white/10 text-white/10'
-                     }`}
-                   >
-                     {node.type === 'MILESTONE' && <Flag size={48} />}
-                     {node.type === 'CLASS' && <Zap size={48} />}
-                     {node.type === 'EXAM' && <Award size={48} />}
-                     {isLocked && <Lock size={20} className="absolute -top-2 -right-2 bg-black rounded-full p-2 border border-white/20" />}
-                     
-                     <div className="absolute -bottom-16 w-64 text-center">
-                        <p className={`text-[10px] font-black uppercase tracking-[0.4em] mb-1 ${
-                          isCompleted ? 'text-[#4ADE80]' : isActive ? 'text-[#38BDF8]' : 'text-white/10'
-                        }`}>SEMANA {node.week}</p>
-                        <h3 className="text-white text-xl font-black italic uppercase tracking-tighter">{node.label}</h3>
-                     </div>
-                   </motion.button>
-
-                   {/* Detail Popover */}
-                   <div className={`absolute top-1/2 -translate-y-1/2 w-64 opacity-0 group-hover:opacity-100 transition-all duration-500 pointer-events-none z-50 ${
-                     index % 2 === 0 ? 'left-[120%]' : 'right-[120%]'
-                   }`}>
-                      <div className="neo-glass bg-[#061a1a]/95 border border-[#38BDF8]/30 p-6 rounded-[2rem] shadow-[0_30px_60px_rgba(0,0,0,0.6)]">
-                         <h4 className="text-white text-sm font-black uppercase italic mb-2">{node.label}</h4>
-                         <p className="text-white/40 text-[10px] font-medium leading-relaxed italic mb-4">{node.description}</p>
-                         {node.speakingAccuracy && (
-                            <div className="flex items-center justify-between border-t border-white/10 pt-4">
-                               <span className="text-[9px] font-black text-white/20 uppercase tracking-widest">Speaking Accuracy</span>
-                               <span className="text-sm font-black text-[#DEFF9A]">{node.speakingAccuracy}</span>
-                            </div>
-                         )}
-                      </div>
-                   </div>
-                </div>
-
-                <div className="w-1/2" />
-              </motion.div>
+              <div key={w.semana}>
+                {showUnitHeader && <UnitHeader nombre={w.unidad_libro} />}
+                <WeekCard
+                  week={w}
+                  status={status}
+                  progress={progress}
+                  isExam={EXAM_WEEKS.includes(w.semana)}
+                  isClosing={w.semana === CLOSING_WEEK}
+                  onClick={onSelectClass && (WEEK_TO_LESSONS[w.semana]?.[0]) ? () => onSelectClass(WEEK_TO_LESSONS[w.semana][0]) : undefined}
+                />
+              </div>
             );
           })}
 
-          <div className="py-64 flex flex-col items-center">
-             <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center text-white/20">
-                <ChevronUp className="animate-bounce" />
-             </div>
-             <p className="text-[10px] font-black uppercase tracking-[0.6em] text-white/10 mt-4">Destino Dallas VIP</p>
+          <TreasureEnd unlocked={completedCount === weeks.length} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function HudStat({ icon, value, label, color }: { icon: ReactNode; value: string; label: string; color: string }) {
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10">
+      <span style={{ color }}>{icon}</span>
+      <div className="flex flex-col leading-none">
+        <span className="text-[10px] font-black" style={{ color }}>{value}</span>
+        <span className="text-[7px] font-mono uppercase text-white/40 tracking-widest">{label}</span>
+      </div>
+    </div>
+  );
+}
+
+function UnitHeader({ nombre }: { nombre: string }) {
+  return (
+    <div className="relative flex items-center gap-3 my-8 first:mt-0">
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[#00F5D4]/40 to-transparent" />
+      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-[#00F5D4]/10 border border-[#00F5D4]/30">
+        <BookOpen size={11} className="text-[#00F5D4]" />
+        <span className="text-[9px] font-black uppercase tracking-widest text-[#00F5D4]">{nombre}</span>
+      </div>
+      <div className="flex-1 h-px bg-gradient-to-r from-transparent via-[#00F5D4]/40 to-transparent" />
+    </div>
+  );
+}
+
+function WeekCard({ week, status, progress, isExam, isClosing, onClick }: {
+  week: SemanaMalla;
+  status: NodeStatus;
+  progress: number;
+  isExam?: boolean;
+  isClosing?: boolean;
+  onClick?: () => void;
+}) {
+  const isCompleted = status === 'COMPLETED';
+  const isCurrent = status === 'CURRENT';
+  const isLocked = status === 'LOCKED';
+
+  const color = isCompleted ? '#00F5D4' : isCurrent ? '#38BDF8' : '#4B5563';
+  const statusLabel = isCompleted ? 'Completada' : isCurrent ? 'En curso' : 'Bloqueada';
+
+  return (
+    <motion.div
+      data-week={week.semana}
+      initial={{ opacity: 0, y: 20 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }}
+      onClick={!isLocked && onClick ? onClick : undefined}
+      whileHover={!isLocked && onClick ? { scale: 1.01, y: -2 } : undefined}
+      whileTap={!isLocked && onClick ? { scale: 0.995 } : undefined}
+      className={"relative rounded-3xl border-2 p-5 sm:p-6 mb-4 transition-all " + (
+        isCompleted
+          ? "bg-gradient-to-br from-[#00F5D4]/8 to-transparent border-[#00F5D4]/40"
+          : isCurrent
+          ? "bg-gradient-to-br from-[#38BDF8]/10 to-transparent border-[#38BDF8]/50 shadow-[0_0_30px_rgba(56,189,248,0.15)]"
+          : "bg-white/[0.02] border-white/5 opacity-55"
+      ) + (!isLocked && onClick ? " cursor-pointer hover:shadow-[0_0_25px_rgba(0,245,212,0.15)]" : "")}
+    >
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-3">
+          <div
+            className="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl flex items-center justify-center font-black text-lg sm:text-xl shrink-0"
+            style={{
+              backgroundColor: color + "22",
+              borderColor: color + "66",
+              border: "2px solid " + color + "66",
+              color,
+            }}
+          >
+            {isLocked ? <Lock size={18} /> : isCompleted ? <Check size={22} strokeWidth={3} /> : week.semana}
           </div>
+          <div>
+            <p className="text-[9px] font-mono uppercase tracking-widest" style={{ color: isLocked ? "#6B7280" : color }}>
+              Semana {String(week.semana).padStart(2, "0")} · {week.fechas}
+            </p>
+            <p className="text-[8px] font-mono uppercase tracking-widest text-white/30 mt-0.5">
+              {week.paginas}
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap justify-end">
+          {isExam && (
+            <span className="px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border whitespace-nowrap bg-amber-500/15 border-amber-400/40 text-amber-300">
+              🎯 Examen
+            </span>
+          )}
+          {isClosing && (
+            <span className="px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border whitespace-nowrap bg-emerald-500/15 border-emerald-400/40 text-emerald-300">
+              🏆 Cierre
+            </span>
+          )}
+          <span
+            className="px-2.5 py-1 rounded-full text-[8px] font-black uppercase tracking-widest border whitespace-nowrap"
+            style={{
+              color,
+              borderColor: color + "66",
+              backgroundColor: color + "15",
+            }}
+          >
+            {statusLabel}
+          </span>
         </div>
       </div>
 
-      <div className="fixed inset-0 pointer-events-none z-0">
-        <div className="absolute top-0 w-full h-[600px] bg-gradient-to-b from-[#0A0D10] via-[#0A0D10]/80 to-transparent" />
-        <div className="absolute bottom-0 w-full h-[600px] bg-gradient-to-t from-[#0A0D10] to-transparent" />
+      <h3 className={"text-sm sm:text-base font-black uppercase leading-tight mb-1 " + (isLocked ? "text-white/40" : "text-white")}>
+        {week.eje_tematico}
+      </h3>
+
+      <p className="text-[10px] font-mono text-white/40 mb-3">{week.unidad_libro}</p>
+
+      {!isLocked && (
+        <div className="space-y-2 mb-3">
+          <div className="flex items-center justify-between text-[9px] font-mono">
+            <span className="text-white/40 uppercase">Progreso</span>
+            <span style={{ color }} className="font-black">{progress}%</span>
+          </div>
+          <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all duration-700"
+              style={{
+                width: progress + "%",
+                background: "linear-gradient(90deg, " + color + ", " + color + "cc)",
+                boxShadow: "0 0 8px " + color + "80",
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      {week.kpi && (
+        <div className="flex items-start gap-2 pt-3 border-t border-white/5">
+          <FileCheck2 size={12} className="text-[#DEFF9A] shrink-0 mt-0.5" />
+          <p className="text-[9px] font-mono text-white/50 leading-relaxed flex-1">
+            <span className="text-[#DEFF9A]/70 font-bold">KPI:</span> {week.kpi}
+          </p>
+        </div>
+      )}
+
+      {!isLocked && onClick && (
+        <div className="flex items-center justify-end gap-1 mt-3 pt-3 border-t border-white/5">
+          <span className="text-[9px] font-black uppercase tracking-widest" style={{ color }}>
+            {isCompleted ? 'Repasar' : isCurrent ? 'Continuar' : 'Abrir'}
+          </span>
+          <ChevronRight size={12} style={{ color }} />
+        </div>
+      )}
+    </motion.div>
+  );
+}
+
+function TreasureEnd({ unlocked }: { unlocked: boolean }) {
+  return (
+    <div className="flex flex-col items-center py-16 gap-4">
+      <motion.div
+        animate={unlocked ? { scale: [1, 1.1, 1], rotate: [0, 5, -5, 0] } : {}}
+        transition={{ duration: 2, repeat: unlocked ? Infinity : 0 }}
+        className={"relative w-24 h-24 rounded-full flex items-center justify-center " + (
+          unlocked
+            ? "bg-gradient-to-br from-[#DEFF9A]/30 to-[#00F5D4]/20 border-2 border-[#DEFF9A] shadow-[0_0_40px_rgba(222,255,154,0.5)]"
+            : "bg-white/5 border-2 border-white/10"
+        )}
+      >
+        {unlocked ? (
+          <Crown size={48} className="text-[#DEFF9A]" strokeWidth={2} />
+        ) : (
+          <Trophy size={40} className="text-white/20" />
+        )}
+        {unlocked && (
+          <>
+            <Sparkles size={20} className="absolute -top-1 -right-1 text-[#DEFF9A] animate-pulse" />
+            <Sparkles size={16} className="absolute -bottom-1 -left-1 text-[#00F5D4] animate-pulse" />
+          </>
+        )}
+      </motion.div>
+      <div className="text-center">
+        <p className="text-[10px] font-black uppercase tracking-[0.5em]" style={{ color: unlocked ? "#DEFF9A" : "#6B7280" }}>
+          {unlocked ? "Modulo A1 Completado" : "Destino Final · Modulo A1"}
+        </p>
       </div>
     </div>
   );

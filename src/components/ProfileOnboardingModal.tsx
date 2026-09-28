@@ -32,7 +32,7 @@ function isProfileComplete(role: string, data: Record<string, unknown>): boolean
   if (role === 'ALUMNO') {
     return Boolean(
       data.name && String(data.name).trim() &&
-      data.studentId && String(data.studentId).trim() &&
+      data.numeroControl && String(data.numeroControl).trim() &&
       data.moduloTec && String(data.moduloTec).trim()
     );
   }
@@ -59,7 +59,7 @@ function getMissingFields(role: string, data: Record<string, unknown>): string[]
   const missing: string[] = [];
   if (role === 'ALUMNO') {
     if (!data.name || !String(data.name).trim()) missing.push('Nombre completo');
-    if (!data.studentId || !String(data.studentId).trim()) missing.push('Número de control');
+    if (!data.numeroControl || !String(data.numeroControl).trim()) missing.push('Número de control');
     if (!data.moduloTec || !String(data.moduloTec).trim()) missing.push('Módulo TEC');
   } else if (role === 'DOCENTE') {
     if (!data.name || !String(data.name).trim()) missing.push('Nombre completo');

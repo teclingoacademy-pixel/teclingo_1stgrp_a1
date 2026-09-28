@@ -15,7 +15,7 @@ import {
   SheetTextoBaseRow,
   INITIAL_USUARIOS,
   INITIAL_TEXTOS_BASE,
-} from '@/data/workbook/googleDatasheetA1';
+} from '@/data/legacy/workbookData';
 
 export interface ApiResponse<T = unknown> {
   success: boolean;

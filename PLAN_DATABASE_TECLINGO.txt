@@ -1,0 +1,322 @@
+================================================================================
+                    CONTEXTO COMPLETO TECLINGO-V4
+                    Base de Datos y Arquitectura
+                    Ultima actualizacion: 2026-09-20 05:00
+================================================================================
+
+RESUMEN DEL PROYECTO
+---------------------
+TECLINGO PRO 1.1 es una plataforma premium de aprendizaje de ingles con:
+- Frontend: React 19 + TypeScript + Vite + Tailwind CSS v4
+- Backend: Express.js (TypeScript) en puerto 3000
+- ORM: Prisma 6.19.3
+- Base de Datos: PostgreSQL 15 (via Docker)
+- AI: Groq SDK (Llama 3.3 70B)
+- Despliegue: Vercel (serverless) + Docker (local dev)
+
+================================================================================
+                     ESTADO ACTUAL DEL PROYECTO
+                     Ultimo checkpoint: 2026-09-20 05:00
+================================================================================
+
+DONDE ESTAMOS:
+  [OK] Docker PostgreSQL corriendo (teclingo_postgres_dev, puerto 5432)
+  [OK] 7 tablas creadas: User, Lesson, Exercise, UserProgress, Submission,
+                         DirectorProfile, TeacherProfile
+  [OK] 6 migraciones aplicadas (5 prisma + 1 manual: add_semestres)
+  [OK] 3 usuarios en BD: 1 ADMIN, 1 TEACHER, 1 STUDENT
+  [OK] 1 leccion (A1_C01) con 49 ejercicios
+  [OK] Google Login funciona (rol se actualiza en usuario existente)
+  [OK] Credencial DINER visible en dashboard del Director
+  [OK] Endpoints CRUD para DirectorProfile y TeacherProfile
+  [OK] Frontend conectado: handleSave() guarda solo en PostgreSQL
+  [OK] GOOGLE SHEETS DESHABILITADO
+
+================================================================================
+         CAMBIOS REALIZADOS EN ESTA SESION (2026-09-20)
+================================================================================
+
+1. [server.ts] Generacion automatica de institutionCode para DIRECTOR
+   - Funcion generateInstitutionCode() genera codigos tipo "DIR-XXXXXX"
+   - Funcion createUniqueInstitutionCode() verifica unicidad en BD
+   - Se crea DirectorProfile automaticamente al registrar usuario con rol ADMIN
+
+2. [server.ts] Generacion automatica de idEmpleado para TEACHER
+   - Funcion generateIdEmpleado() genera IDs tipo "DOC-001", "DOC-002"
+   - Se crea TeacherProfile automaticamente al registrar usuario con rol TEACHER
+   - Se guarda institution_code si se proporciona durante registro
+
+3. [server.ts] Campo semestres agregado al merge de DirectorProfile
+
+4. [prisma/schema.prisma] Campo semestres agregado a DirectorProfile
+   - Migracion manual aplicada via Docker psql
+
+5. [identityService.ts] Mapeo de id_empleado y semestres
+
+6. [UserSettings.tsx] Turnos dropdown usa constante TURNOS_INSTITUCION
+
+7. [UserSettings.tsx] Campo degree agregado al director
+   - Dropdown "Grado Academico" en pestana PERSONAL
+
+8. [UserSettings.tsx] Campo semestres carga y guarda correctamente
+
+9. [Database] Perfiles creados para usuarios existentes
+
+================================================================================
+              ANALISIS: SISTEMA ANTIGUO vs SISTEMA NUEVO
+              (Comparacion Google Sheets vs PostgreSQL)
+================================================================================
+
+TABLAS DEL SISTEMA ANTIGUO (20 hojas en Google Sheets):
+
+  #   Hoja Antigua                    Estado PostgreSQL        Notas
+  --- ------------------------------- -----------------------  ----------------
+  1   USUARIOS                        OK User (completa)       Migrada
+  2   ALUMNOS                         FALTA                    Prioridad ALTA
+  3   DOCENTES                        OK TeacherProfile        Migrada
+  4   DIRECTORES                      OK DirectorProfile       Migrada
+  5   CHATS                           FALTA                    Prioridad MEDIA
+  6   MENSAJES                        FALTA                    Prioridad MEDIA
+  7   GRUPOS                          FALTA                    Prioridad ALTA
+  8   GRUPOS_INGLES                   FALTA                    Prioridad ALTA
+  9   GRUPO_USUARIOS                  FALTA                    Prioridad ALTA
+  10  ASISTENCIAS                     FALTA                    Prioridad ALTA
+  11  ASESORIAS_SINCRONIZADAS         FALTA                    Prioridad BAJA
+  12  ASESORIAS_CONFIG                FALTA                    Prioridad BAJA
+  13  CALENDAR_EVENTS                 FALTA                    Prioridad MEDIA
+  14  METAS                           FALTA                    Prioridad BAJA
+  15  LOGROS                          FALTA                    Prioridad BAJA
+  16  SUSCRIPCIONES                   FALTA                    Prioridad BAJA
+  17  PAGOS                           FALTA                    Prioridad BAJA
+  18  LOG_ACCESOS                     FALTA                    Prioridad BAJA
+  19  LOG_ACTIVIDAD_GLOBAL            FALTA                    Prioridad BAJA
+  20  ADN                             DESCONOCIDO              Verificar
+
+TABLAS NUEVAS (no existian en sistema antiguo):
+  - Lesson       -> Contenido de lecciones de ingles
+  - Exercise     -> Ejercicios por leccion
+  - UserProgress -> Progreso de usuario por leccion
+  - Submission   -> Respuestas/envios de ejercicios
+
+================================================================================
+         DETALLE DE TABLAS FALTANTES (con columnas del sistema antiguo)
+================================================================================
+
+--- FASE 1: ALUMNOS (StudentProfile) - PRIORIDAD ALTA ---
+
+  Columnas del sistema antiguo (ALUMNOS):
+    user_id            String (FK -> User.id)
+    phone              String?
+    bio                String?
+    curp               String?
+    student_id         String?
+    birthDate          DateTime?
+    numero_control     String?
+    carrera            String?
+    turno              String?
+    semestre           String?
+    modulo_tec         String?
+    nivel_ingles       String?
+    institution_code   String?
+    director_email     String?
+
+  Columnas adicionales sugeridas:
+    experienceYears    Int (default 0)
+    createdAt          DateTime (default now())
+    updatedAt          DateTime (@updatedAt)
+
+  Relacion: User 1:1 StudentProfile
+
+--- FASE 2: GRUPOS (Group) - PRIORIDAD ALTA ---
+
+  Columnas del sistema antiguo (GRUPOS):
+    grupo_id           String (PK)
+    director_id        String (FK -> User.id)
+    director_email     String?
+    institution_code   String?
+    carrera            String?
+    grado              String?
+    seccion            String?
+    turno              String?
+    modalidad          String?
+    materias_json      Json?
+    horario            String?
+    dias               String?
+    status             String? (ACTIVE, INACTIVE)
+    createdAt          DateTime
+    updatedAt          DateTime
+
+  Relacion: Director 1:N Group
+
+--- FASE 3: GRUPOS_INGLES (EnglishGroup) - PRIORIDAD ALTA ---
+
+  Columnas del sistema antiguo (GRUPOS_INGLES):
+    grupo_id           String (PK)
+    code_id            String?
+    nombre             String?
+    grupo              String?
+    nivel              String?
+    carrera            String?
+    turno              String?
+    docente_id         String? (FK -> User.id)
+    docente_email      String?
+    horario            String?
+    dias               String?
+    capacidad          Int?
+    alumnos_inscritos  Int? (default 0)
+    status             String? (ACTIVE, INACTIVE)
+    createdAt          DateTime
+    updatedAt          DateTime
+
+  Relacion: Teacher 1:N EnglishGroup
+
+--- FASE 4: GRUPO_USUARIOS (GroupMember) - PRIORIDAD ALTA ---
+
+  Columnas del sistema antiguo (GRUPO_USUARIOS):
+    asignacion_id      String (PK)
+    grupo_id           String (FK -> Group.id)
+    user_id            String (FK -> User.id)
+    email              String?
+    nombre             String?
+    rol_en_grupo       String? (ALUMNO, DOCENTE, ADMIN)
+    fecha_asignacion   DateTime
+    asignado_por       String?
+    activo             Boolean (default true)
+
+  Relacion: Group N:N User (via GroupMember)
+
+--- FASE 5: ASISTENCIAS (Attendance) - PRIORIDAD ALTA ---
+
+  Columnas del sistema antiguo (ASISTENCIAS):
+    id                 String (PK)
+    grupo_id           String (FK -> Group.id)
+    user_id            String (FK -> User.id)
+    email              String?
+    nombre             String?
+    fecha              DateTime
+    estado             String? (PRESENTE, AUSENTE, RETARDO, JUSTIFICADO)
+    docente_email      String?
+    createdAt          DateTime
+
+  Relacion: Group N:N User (via Attendance)
+
+--- FASE 6: CHATS (Chat) - PRIORIDAD MEDIA ---
+
+  Columnas del sistema antiguo (CHATS):
+    chat_id            String (PK)
+    name               String?
+    type               String? (DIRECT, GROUP, INSTITUTIONAL)
+    participants       String? (JSON array de user_ids)
+    created_by         String? (FK -> User.id)
+    created_at         DateTime
+    last_message       String?
+    last_message_at    DateTime?
+
+--- FASE 7: MENSAJES (Message) - PRIORIDAD MEDIA ---
+
+  Columnas del sistema antiguo (MENSAJES):
+    msg_id             String (PK)
+    chat_id            String (FK -> Chat.id)
+    sender_id          String (FK -> User.id)
+    sender_name        String?
+    sender_role        String?
+    content            String?
+    timestamp          DateTime
+    is_director        Boolean?
+
+--- FASE 8: CALENDAR_EVENTS - PRIORIDAD MEDIA ---
+
+  Columnas del sistema antiguo:
+    id                 String (PK)
+    day                Int?
+    month              Int?
+    year               Int?
+    title              String?
+    type               String?
+    description        String?
+    time               String?
+    visibility         String?
+    created_by         String? (FK -> User.id)
+    created_at         DateTime
+    updated_at         DateTime
+    google_calendar_event_id  String?
+
+--- FASE 9: METAS (Goal) - PRIORIDAD BAJA ---
+--- FASE 10: LOGROS (Achievement) - PRIORIDAD BAJA ---
+--- FASE 11: SUSCRIPCIONES - PRIORIDAD BAJA ---
+--- FASE 12: PAGOS - PRIORIDAD BAJA ---
+--- FASE 13: LOG_ACCESOS - PRIORIDAD BAJA ---
+--- FASE 14: LOG_ACTIVIDAD_GLOBAL - PRIORIDAD BAJA ---
+
+================================================================================
+                     HISTORIAL DE MIGRACIONES
+================================================================================
+
+  20260919033835_add_password     -> User, Lesson, Exercise, UserProgress, Submission
+  20260919_add_sheet_columns     -> Columnas Sheet a User + enum WRITING
+  20260919_add_director_profile  -> Tabla DirectorProfile
+  20260919_add_teacher_profile   -> Tabla TeacherProfile
+  20260919_add_experience_years  -> degree + experienceYears
+  20260920_add_semestres         -> semestres (manual via psql)
+
+================================================================================
+                     ESTADO DE LA BASE DE DATOS
+================================================================================
+
+  User:            3 registros
+    conceptosaimx@gmail.com   -> ADMIN   -> DirectorProfile (DIR-YPDGHG)
+    vidsmxx@gmail.com         -> TEACHER -> TeacherProfile (DOC-001)
+    bachilleresaiapp6@gmail.com -> STUDENT
+
+  DirectorProfile: 1 registro (DIR-YPDGHG, sin datos adicionales)
+  TeacherProfile:  1 registro (DOC-001, institutionCode: DIR-YPDGHG)
+  Lesson:          1 registro (A1_C01, 49 ejercicios)
+  UserProgress:    0 registros
+  Submission:      0 registros
+
+================================================================================
+                     CATALOGOS PREDEFINIDOS (Frontend)
+================================================================================
+
+  TIPOS_INSTITUCION:
+    TECNOLOGICO / INSTITUTO TECNOLOGICO
+    UNIVERSIDAD PUBLICA, UNIVERSIDAD PRIVADA
+    PREPARATORIA / BACHILLERATO
+    ESCUELA SECUNDARIA, PRIMARIA
+    CENTRO DE IDIOMAS, ACADEMIA / CAPACITACION
+
+  MODALIDADES: PRESENCIAL, EN LINEA, MIXTA / HIBRIDA
+
+  TURNOS_INSTITUCION: MATUTINO, VESPERTINO, SEMI-ESCOLARIZADO, SABATINO, DISTANCIA / EN LINEA
+
+  GRADO_ACADEMICO: LICENCIATURA, INGENIERIA, MAESTRIA, DOCTORADO, DOCENTE, ADMINISTRATIVO, TECNICO
+
+  CARRERAS_DEFAULT_TEC_PANUCO (7):
+    INGENIERIA EN SISTEMAS COMPUTACIONALES, INGENIERIA INDUSTRIAL,
+    INGENIERIA MECATRONICA, INGENIERIA ELECTRONICA,
+    INGENIERIA EN GESTION EMPRESARIAL, LICENCIATURA EN CONTADURIA PUBLICA,
+    ARQUITECTURA
+
+  CATALOGOS ANTIGUOS (26 carreras - solo referencia):
+    ING INDUSTRIAL, ING SISTEMAS, ING CIVIL, ING MECATRONICA,
+    LIC. ADMINISTRACION, CONTADURIA, ARQUITECTURA, ING EDUCACION,
+    CAR TEC, LIC DERECHO, LIC PSICOLOGIA, LIC ENFERMERIA,
+    MEDICINA, ODONTOLOGIA, LIC ADMINISTRACION PUBLICA,
+    LIC COMERCIO INTERNACIONAL, LIC TURISMO, LIC GASTRONOMIA,
+    ING QUIMICA, ING AMBIENTAL, ING ENERGIA, ING MINAS,
+    ING BIOQUIMICA, ING AGRONOMIA, ING ZOOTECNIA
+
+================================================================================
+                     QUE SIGUIE (ORDEN RECOMENDADO)
+================================================================================
+
+  PASO 1: StudentProfile (ALUMNOS)         -> Fase 1
+  PASO 2: Group (GRUPOS)                   -> Fase 2
+  PASO 3: EnglishGroup (GRUPOS_INGLES)     -> Fase 3
+  PASO 4: GroupMember (GRUPO_USUARIOS)     -> Fase 4
+  PASO 5: Attendance (ASISTENCIAS)         -> Fase 5
+  PASO 6: Chat + Message (CHATS+MENSAJES)  -> Fase 6-7
+  PASO 7: CalendarEvent                    -> Fase 8
+  PASO 8: Metas + Logros                   -> Fase 9-10 (si se necesitan)
+  PASO 9: Suscripciones + Pagos            -> Fase 11-12 (si se necesitan)
+  PASO 10: Logs                            -> Fase 13-14 (si se necesitan)

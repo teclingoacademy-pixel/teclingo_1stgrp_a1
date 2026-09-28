@@ -355,7 +355,8 @@ export function MessagingModule({ initialChatId, initialPrefilledText }: { initi
                         whileHover={{ x: 5 }}
                         onClick={() => {
                           // Crear o abrir chat directo con este contacto
-                          const chatId = `DIRECT-${userEmail.toLowerCase()}_${contacto.email.toLowerCase()}`;
+                          const sortedEmails = [userEmail, contacto.email].map(e => e.toLowerCase().trim()).sort();
+                          const chatId = `DIRECT-${sortedEmails.join('_')}`;
                           createGroupChat(chatId, contacto.nombre, [userEmail, contacto.email]);
                           setSelectedChatId(chatId);
                           setMobileView('chat');

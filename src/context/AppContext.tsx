@@ -4,7 +4,13 @@
  */
 
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
-import { registrarMensaje, registrarChat, obtenerMensajes, obtenerChats } from '../services/identityService';
+import {
+  listarChats as listarChatsAPI,
+  obtenerMensajesChat,
+  enviarMensaje,
+  crearChat as crearChatAPI,
+  marcarLeido,
+} from '../services/messagingService';
 import { crearFolio as crearFolioAPI, obtenerFolios as obtenerFoliosAPI, firmarFolio as firmarFolioAPI, completarFolio as completarFolioAPI } from '../services/folioService';
 
 type Theme = 'dark' | 'light' | 'normal';
@@ -552,48 +558,49 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
     const cargarChats = async () => {
       try {
-        const remoteChats = await obtenerChats(userEmail);
-        if (cancelled || !remoteChats || remoteChats.length === 0) return;
+        const remoteChats = await listarChatsAPI(userEmail);
+        if (cancelled || !remoteChats) return;
 
         setChats(prev => {
-          const merged = [...prev];
-          remoteChats.forEach((rc: any) => {
-            const existing = merged.find(c => c.id === rc.id);
-            if (existing) {
-              return;
-            }
-            const chatType: ChatThread['type'] =
-              rc.type === 'GLOBAL' ? 'GLOBAL' :
-              rc.type === 'DIRECT' ? 'DIRECT' : 'GROUP';
-            const normalizedParticipants: string[] = Array.isArray(rc.participants)
-              ? Array.from(new Set(rc.participants.map((p: string) => String(p || '').trim().toLowerCase()).filter(Boolean)))
-              : [];
-            const savedLastRead = savedReadTimestamps[rc.id] || '';
-            merged.push({
+          const remoteIds = new Set(remoteChats.map((c: any) => c.id));
+          const onlyLocal = prev.filter(c => !remoteIds.has(c.id));
+
+          const mapped: ChatThread[] = remoteChats.map((rc: any) => {
+            const existing = prev.find(c => c.id === rc.id);
+            const savedLastRead = savedReadTimestamps[rc.id] || existing?.lastReadAt || '';
+            const msgs: Message[] = (rc.messages || []).map((m: any) => ({
+              id: m.id,
+              senderId: m.senderId,
+              senderName: m.senderName,
+              senderRole: m.senderRole as UserRole,
+              content: m.content,
+              timestamp: m.timestamp,
+              isDirector: m.isDirector,
+            }));
+            return {
               id: rc.id,
               name: rc.name || rc.id,
-              type: chatType,
-              participants: normalizedParticipants,
-              messages: [],
-              lastMessage: rc.last_message || '',
-              unreadCount: 0,
-              lastReadAt: savedLastRead || undefined
-            });
+              type: rc.type as ChatThread['type'],
+              participants: rc.participants || [],
+              participantNames: rc.participantNames,
+              participantRoles: rc.participantRoles as Record<string, UserRole> | undefined,
+              messages: msgs,
+              lastMessage: rc.lastMessage || '',
+              unreadCount: rc.unreadCount || 0,
+              lastReadAt: savedLastRead || undefined,
+            };
           });
-          return merged;
-        });
 
-        for (const rc of remoteChats) {
-          const lastMsg = rc.last_message;
-          if (!lastMsg) continue;
-          cargarMensajesChat(rc.id);
-        }
-      } catch {}
+          return [...onlyLocal, ...mapped];
+        });
+      } catch (err) {
+        console.warn('[AppContext] cargarChats error:', err);
+      }
     };
 
     cargarChats();
 
-    const interval = setInterval(cargarChats, 15000);
+    const interval = setInterval(cargarChats, 5000);
     return () => { cancelled = true; clearInterval(interval); };
   }, [userEmail]);
 
@@ -607,6 +614,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const [, d, mo, y, h, mi, s] = m;
       return new Date(+y, +mo - 1, +d, +h, +mi, +s).getTime();
     }
+    // Formato "HH:MM" (backend messagingService) -> combinarlo con HOY
+    const m2 = ts.match(/^(\d{1,2}):(\d{2})/);
+    if (m2) {
+      const now = new Date();
+      return new Date(now.getFullYear(), now.getMonth(), now.getDate(), +m2[1], +m2[2]).getTime();
+    }
     return 0;
   }, []);
 
@@ -616,33 +629,35 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (loadingChatsRef.current.has(chatId)) return;
     loadingChatsRef.current.add(chatId);
     try {
-      const remoteMsgs = await obtenerMensajes(chatId, 100);
-      if (!remoteMsgs || remoteMsgs.length === 0) return;
+      const remoteMsgs = await obtenerMensajesChat(userEmail, chatId, 100);
+      if (!remoteMsgs) return;
 
       setChats(prev => prev.map(chat => {
         if (chat.id !== chatId) return chat;
+
         const existingIds = new Set(chat.messages.map(m => m.id));
-        const newMsgs = remoteMsgs
+        const newMsgs: Message[] = remoteMsgs
           .filter((m: any) => !existingIds.has(m.id))
           .map((m: any) => ({
             id: m.id,
-            senderId: m.sender_id,
-            senderName: m.sender_name,
-            senderRole: m.sender_role,
+            senderId: m.senderId,
+            senderName: m.senderName,
+            senderRole: m.senderRole as UserRole,
             content: m.content,
             timestamp: m.timestamp,
-            isDirector: m.is_director === 'TRUE' || m.is_director === true
+            isDirector: m.isDirector,
           }));
-        if (newMsgs.length === 0) return chat;
-        const merged = [...chat.messages, ...newMsgs];
+
+        const merged = newMsgs.length === 0 ? chat.messages : [...chat.messages, ...newMsgs];
+
         const lastRead = chat.lastReadAt ? new Date(chat.lastReadAt).getTime() : 0;
         const userEmailLower = userEmail.toLowerCase();
         const newUnread = merged.filter(m => {
           if (m.senderId === 'ME') return false;
           if (String(m.senderId || '').toLowerCase() === userEmailLower) return false;
-          const ts = parseTimestamp(m.timestamp);
-          return ts > lastRead;
+          return parseTimestamp(m.timestamp) > lastRead;
         }).length;
+
         const pNames = { ...chat.participantNames };
         const pRoles = { ...chat.participantRoles };
         merged.forEach(m => {
@@ -650,16 +665,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           if (sid && sid !== 'me' && m.senderName) pNames[sid] = m.senderName;
           if (sid && sid !== 'me' && m.senderRole) pRoles[sid] = m.senderRole;
         });
+
         return {
           ...chat,
           messages: merged,
-          lastMessage: newMsgs[newMsgs.length - 1].content,
+          lastMessage: newMsgs.length > 0 ? newMsgs[newMsgs.length - 1].content : chat.lastMessage,
           unreadCount: newUnread,
           participantNames: pNames,
-          participantRoles: pRoles
+          participantRoles: pRoles,
         };
       }));
-    } catch {} finally {
+    } catch (err) {
+      console.warn('[AppContext] cargarMensajesChat error:', err);
+    } finally {
       loadingChatsRef.current.delete(chatId);
     }
   }, [userEmail, parseTimestamp]);
@@ -673,7 +691,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         ? { ...chat, lastReadAt: now, unreadCount: 0 }
         : chat
     ));
-  }, []);
+    if (userEmail) {
+      marcarLeido(userEmail, chatId).catch(() => {});
+    }
+  }, [userEmail]);
 
   // Auto-cargar mensajes cuando se selecciona un chat
   useEffect(() => {
@@ -720,34 +741,46 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   const addMessage = useCallback((chatId: string, message: Message) => {
+    // 1) Optimistic local
     setChats(prev => prev.map(chat => {
-      if (chat.id === chatId) {
-        const isFromOther = message.senderId !== 'ME' &&
-          String(message.senderId || '').toLowerCase() !== String(userEmail || '').toLowerCase();
-        if (isFromOther && chat.lastReadAt) {
-          const lastRead = new Date(chat.lastReadAt).getTime();
-          const msgTs = parseTimestamp(message.timestamp);
-          if (msgTs <= lastRead) {
-            return { ...chat, messages: [...chat.messages, message], lastMessage: message.content };
-          }
-        }
-        return {
-          ...chat,
-          messages: [...chat.messages, message],
-          lastMessage: message.content,
-          unreadCount: chat.unreadCount + (isFromOther ? 1 : 0)
-        };
-      }
-      return chat;
+      if (chat.id !== chatId) return chat;
+      if (chat.messages.some(m => m.id === message.id)) return chat;
+      const isFromOther = message.senderId !== 'ME' &&
+        String(message.senderId || '').toLowerCase() !== String(userEmail || '').toLowerCase();
+      return {
+        ...chat,
+        messages: [...chat.messages, message],
+        lastMessage: message.content,
+        unreadCount: chat.unreadCount + (isFromOther ? 1 : 0),
+      };
     }));
 
-    if (userEmail) {
-      registrarMensaje(
-        userEmail, chatId, message.content,
-        message.senderName, message.senderRole, message.isDirector
-      ).catch(() => {});
-    }
-  }, [userEmail, parseTimestamp]);
+    // 2) POST al backend + reconciliar id/timestamp reales
+    if (!userEmail) return;
+    enviarMensaje(
+      userEmail, chatId, message.content,
+      message.senderName, message.senderRole, message.isDirector
+    ).then((saved) => {
+      setChats(prev => prev.map(chat => {
+        if (chat.id !== chatId) return chat;
+        const idx = chat.messages.findIndex(m => m.id === message.id);
+        if (idx === -1) return chat;
+        const next = [...chat.messages];
+        next[idx] = {
+          id: saved.id,
+          senderId: 'ME',
+          senderName: saved.senderName,
+          senderRole: saved.senderRole as UserRole,
+          content: saved.content,
+          timestamp: saved.timestamp,
+          isDirector: saved.isDirector,
+        };
+        return { ...chat, messages: next, lastMessage: saved.content };
+      }));
+    }).catch((err) => {
+      console.warn('[AppContext] enviarMensaje error:', err);
+    });
+  }, [userEmail]);
 
   const createGroupChat = useCallback((groupId: string, name: string, participants: string[]) => {
     const chatType: ChatThread['type'] = groupId.startsWith('DIRECT-') ? 'DIRECT' : 'GROUP';
@@ -770,7 +803,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
 
     if (userEmail) {
-      registrarChat(userEmail, groupId, name, chatType, normalizedParticipants).catch(() => {});
+      crearChatAPI(userEmail, groupId, name, chatType, normalizedParticipants).catch(() => {});
     }
   }, [userEmail]);
 

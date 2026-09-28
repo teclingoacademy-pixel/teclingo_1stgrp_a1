@@ -7,68 +7,162 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-enum Role {
-  STUDENT
-  TEACHER
-  ADMIN
-}
-
-enum Skill {
-  GRAMMAR
-  READING
-  LISTENING
-  SPEAKING
-  VOCABULARY
-}
-
 model User {
-  id            String         @id @default(uuid())
-  email         String         @unique
-  name          String?
-  role          Role           @default(STUDENT)
-  streakDays    Int            @default(0)
-  totalXp        Int            @default(0)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  submissions   Submission[]
-  userProgress  UserProgress[]
+  examResults   ExamResult[]
+  id              String           @id @default(uuid())
+  email           String           @unique
+  name            String?
+  password        String?
+  role            Role             @default(STUDENT)
+  streakDays      Int              @default(0)
+  totalXp         Int              @default(0)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  sheetId         String?          @unique
+  metodo          String?
+  nikName         String?
+  nivel           String?
+  avatar          String?
+  lastAccess      DateTime?
+  active          Boolean          @default(true)
+  directorProfile DirectorProfile?
+  teacherProfile  TeacherProfile?
+  studentProfile  StudentProfile?
+  groupMembers    GroupMember[]
+  submissions     Submission[]
+  userProgress    UserProgress[]
+  attendances     Attendance[]
+  goals           Goal[]
+  achievements    Achievement[]
+  credentials      Credential?
+  conversations ConversationMember[]
+  messages      Message[]
+}
+
+model Credential {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  avatarUrl        String?
+  controlValue     String?
+  nivel            String?
+  grupo            String?
+  career           String?
+  semestre         String?
+  modulo           String?
+  modalidad        String?
+  institutionCode  String?
+  institutionName  String?
+  institutionLogoUrl String?
+  slogan           String?
+  curp             String?
+  email            String?
+  roleLabel        String?
+  chips            String[]
+  qrValue          String?
+  issuedAt         DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
 model Lesson {
-  id           String         @id // Ej: "A1_C01"
-  level        String         // Ej: "A1"
+  id           String         @id
+  level        String
   title        String
   description  String?
   order        Int            @default(1)
   isPublished  Boolean        @default(true)
   createdAt    DateTime       @default(now())
+  weekId       String?
+  week         StudyWeek?     @relation(fields: [weekId], references: [id], onDelete: SetNull)
   exercises    Exercise[]
   userProgress UserProgress[]
+  texts        TextBase[]
+  vocabulary   VocabularyItem[]
+  teacherScript TeacherScript?
+
+  @@index([weekId])
+  videoUrl        String?
+  tituloVideo     String?
+  temaPrincipal   String?
+  tipoContenido   String?  // original | repaso | taller
+  duracionMin     Int?
+  semana          Int?
+  sesion          String?  // A | B
+}
+
+// ===================================================================
+// PLANEACIÓN ACADÉMICA (Study Plan)
+// ===================================================================
+
+model StudyLevel {
+  id          String      @id @default(uuid())
+  code        String      @unique   // "S01"
+  semester    String                // "Semestre 01"
+  cefrTag     String                // "A1.1"
+  levelName   String                // "Principiante"
+  order       Int                   // 1..6
+  isPublished Boolean     @default(false)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  weeks       StudyWeek[]
+}
+
+model StudyWeek {
+  id          String     @id @default(uuid())
+  levelId     String
+  weekNumber  Int                   // 1..18
+  phase       String?               // F1 | F2 | F3 | F4
+  fechas      String
+  ejeTematico String
+  unidadLibro String
+  paginas     String
+  kpi         String
+  horasJson   Json
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  level       StudyLevel @relation(fields: [levelId], references: [id], onDelete: Cascade)
+  lessons     Lesson[]
+
+  @@unique([levelId, weekNumber])
+  @@index([levelId])
 }
 
 model Exercise {
-  id                   String       @id // reactivo_id, ej: "A1_C01_GRAM_01"
-  lessonId             String       // clase_id
-  skill                Skill        // habilidad: GRAMMAR, READING, etc.
-  itemNumber           Int          // numero_reactivo
-  questionType         String       // tipo_pregunta: multiple_choice, comprehension, etc.
-  spanishContext       String?      // contexto_espanol
-  instruction          String?      // instruccion
-  questionText         String       // pregunta_texto
-  translationSentence  String?      // frase_traduccion
-  optionsJson          Json         // opciones_json
-  optionsTranslation   Json?        // opciones_traduccion_json
-  correctAnswer        String       // respuesta_correcta
-  explanation          String?      // respuesta_explicacion
-  vocabularyHint       String?      // pista_vocabulario
-  audioUrl             String?      // audio_url
-  points               Int          @default(10) // puntos
-  timeLimitSec         Int          @default(30) // tiempo_limite_seg
-  difficulty           Int          @default(1)  // dificultad
-  active               Boolean      @default(true) // activo
+  examQuestions   ExamQuestion[]
+  id                  String       @id
+  lessonId            String
+  skill               Skill
+  itemNumber          Int
+  questionType        String
+  spanishContext      String?
+  instruction         String?
+  questionText        String
+  translationSentence String?
+  optionsJson         Json
+  optionsTranslation  Json?
+  correctAnswer       String
+  explanation         String?
+  vocabularyHint      String?
+  audioUrl            String?
+  points              Int          @default(10)
+  timeLimitSec        Int          @default(30)
+  difficulty          Int          @default(1)
+  active              Boolean      @default(true)
+  // ─── CAMPOS NUEVOS CONTENIDO (2026-09-25) ───
+  uiDisplay       String?
+  instructionTTS  Json?
+  audioUI         String?
+  audioTTS        Json?
+  acceptedAnswers String[] @default([])
+  aiToolTags      String[] @default([])
+  voz             String   @default("female")
+  vocabLinks      ExerciseVocabulary[]    perfil       String   @default("")
+    fase         String   @default("F1")
+    parrafos     Int      @default(1)
 
-  lesson      Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-  submissions Submission[]
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  submissions         Submission[]
 }
 
 model UserProgress {
@@ -78,9 +172,8 @@ model UserProgress {
   completed   Boolean  @default(false)
   score       Float?
   completedAt DateTime @default(now())
-
-  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
-  lesson Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, lessonId])
 }
@@ -93,7 +186,428 @@ model Submission {
   isCorrect    Boolean
   timeSpentSec Int
   createdAt    DateTime @default(now())
+  exercise     Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
 
-  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  exercise Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+model DirectorProfile {
+  id                    String    @id @default(uuid())
+  userId                String    @unique
+  phone                 String?
+  bio                   String?
+  curp                  String?
+  birthDate             DateTime?
+  degree                String?
+  experienceYears       Int       @default(0)
+  institutionName       String?
+  institutionLogo       String?
+  slogan                String?
+  instPhone             String?
+  address               String?
+  instEmail             String?
+  facebook              String?
+  instagram             String?
+  linkedin              String?
+  institutionCode       String?   @unique
+  institutionType       String?
+  carrera1              String?
+  carrera2              String?
+  carrera3              String?
+  carrera4              String?
+  carrera5              String?
+  carrera6              String?
+  carrera7              String?
+  turnoMatutino         Boolean   @default(false)
+  turnoVespertino       Boolean   @default(false)
+  turnoSemiEscolarizado Boolean   @default(false)
+  turnoSabatino         Boolean   @default(false)
+  turnoDistancia        Boolean   @default(false)
+  modalidad             String?
+  semestres             String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model TeacherProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  idEmpleado       String?
+  phone            String?
+  bio              String?
+  curp             String?
+  birthDate        DateTime?
+  degree           String?
+  experienceYears  Int      @default(0)
+  specialties      String?
+  certifications   String?
+  institutionCode  String?
+  directorEmail    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model StudentProfile {
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  studentId        String?
+  phone            String?
+  bio              String?
+  curp             String?
+  birthDate        DateTime?
+  experienceYears  Int      @default(0)
+  numeroControl    String?
+  carrera          String?
+  turno            String?
+  semestre         String?
+  moduloTec        String?
+  nivelIngles      String?
+  institutionCode  String?
+  directorEmail    String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model EnglishGroup {
+  id                String   @id @default(uuid())
+  codeId            String   @unique
+  nombre            String
+  grupo             String
+  nivel             String
+  carrera           String?
+  turno             String?
+  docenteEmail      String?
+  capacidad         Int      @default(30)
+  alumnosInscritos  Int      @default(0)
+  status            String   @default("ACTIVE")
+  directorEmail     String
+  institutionCode   String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  members     GroupMember[]
+  attendances Attendance[]
+  schedules   EnglishGroupSchedule[]
+  conversations Conversation[]
+}
+
+model EnglishGroupSchedule {
+  id        String   @id @default(uuid())
+  groupId   String
+  horaInicio String
+  horaFin    String
+  dias       String
+  orden      Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  group EnglishGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, orden])
+}
+
+model GroupMember {
+  id              String   @id @default(uuid())
+  groupId         String
+  userId          String
+  email           String
+  nombre          String?
+  rolEnGrupo      String   @default("ALUMNO")
+  fechaAsignacion DateTime @default(now())
+  asignadoPor     String?
+  activo          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+
+  group EnglishGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId])
+}
+
+model Attendance {
+  id           String   @id @default(uuid())
+  groupId      String
+  userId       String
+  email        String
+  nombre       String?
+  fecha        DateTime
+  estado       String   @default("PRESENTE")
+  horaEntrada  String?
+  metodo       String?  @default("MANUAL")
+  registradoPor String?
+  docenteEmail String?
+  /// Tipo de lectura: siempre ENTRADA (universitario solo registra ingreso).
+  /// Reservado para futuro: ENTRADA | SALIDA
+  tipoLectura  String?  @default("ENTRADA")
+  createdAt    DateTime @default(now())
+
+  group EnglishGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, userId, fecha])
+  @@index([groupId, fecha])
+  @@index([userId, fecha])
+}
+
+model Goal {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  targetDate  DateTime?
+  progress    Int      @default(0)
+  status      String   @default("ACTIVE")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Achievement {
+  id          String   @id @default(uuid())
+  userId      String
+  title       String
+  description String?
+  icon        String?
+  unlockedAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model CalendarEvent {
+  id              String   @id @default(uuid())
+  day             Int?
+  month           Int?
+  year            Int?
+  title           String
+  type            String?
+  description     String?
+  time            String?
+  visibility      String?
+  createdBy       String?
+  institutionCode String?  // Calendario: aísla eventos por institución
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([year, month])
+  @@index([institutionCode])
+}
+
+model Conversation {
+  id             String           @id
+  type           ConversationType @default(GLOBAL)
+  name           String?
+  groupId        String?
+  createdById    String?
+  createdByEmail String?
+  lastMessage    String?
+  lastMessageAt  DateTime?
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  group    EnglishGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
+  members  ConversationMember[]
+  messages Message[]
+
+  @@index([type])
+  @@index([groupId])
+  @@index([lastMessageAt])
+}
+
+model ConversationMember {
+  id             String    @id @default(uuid())
+  conversationId String
+  userId         String
+  email          String
+  name           String?
+  role           String    @default("MEMBER")
+  lastReadAt     DateTime?
+  joinedAt       DateTime  @default(now())
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId])
+  @@index([userId])
+  @@index([email])
+}
+
+model Message {
+  id             String    @id @default(uuid())
+  conversationId String
+  senderId       String
+  senderEmail    String
+  senderName     String?
+  senderRole     String?
+  content        String
+  isDirector     Boolean   @default(false)
+  createdAt      DateTime  @default(now())
+  editedAt       DateTime?
+  deletedAt      DateTime?
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt])
+  @@index([senderId])
+}
+
+enum ConversationType {
+  GLOBAL
+  GROUP
+  DIRECT
+}
+enum Role {
+  STUDENT
+  TEACHER
+  ADMIN
+}
+
+enum Skill {
+  GRAMMAR
+  READING
+  LISTENING
+  SPEAKING
+  VOCABULARY
+  WRITING
+}
+
+// ===================================================================
+// CONTENIDO PEDAGÓGICO (Vocabulary)
+// ===================================================================
+
+model VocabularyItem {
+  id              String   @id @default(uuid())
+  lessonId        String
+  term            String
+  translation     String
+  type            String
+  ttsText         String
+  lang            String   @default("en")
+  pronunciationAf String?
+  exampleUse      String?
+  tags            String[] @default([])
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lesson          Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  exercises       ExerciseVocabulary[]
+  @@index([lessonId])
+  @@index([term])
+}
+
+model ExerciseVocabulary {
+  exerciseId   String
+  vocabularyId String
+  exercise     Exercise       @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  vocabulary   VocabularyItem @relation(fields: [vocabularyId], references: [id], onDelete: Cascade)
+  @@id([exerciseId, vocabularyId])
+}
+
+model TextBase {
+  id           String   @id @default(uuid())
+  lessonId     String
+  title        String
+  content      String
+  wordCount    Int      @default(0)
+  difficulty   Int      @default(1)
+  timeAudioSec Int      @default(30)
+  vocabList    String[] @default([])
+  verbsList    String[] @default([])
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+  perfil       String   @default("")
+  fase         String   @default("F1")
+  parrafos     Int      @default(1)
+}
+
+
+// ===================================================================
+// EXÁMENES — Ubicación, Intermedios y Final MCER
+// ===================================================================
+
+enum ExamType {
+  UBICACION
+  INTERMEDIO
+  FINAL
+}
+
+model Exam {
+  questions       ExamQuestion[]
+  id              String   @id @default(uuid())
+  code            String   @unique   // EXAM_UBICACION, EXAM_INT_1, EXAM_INT_2, EXAM_FINAL
+  title           String
+  type            ExamType
+  weekNumber      Int?               // null para ubicación, 4/8/14 para los demás
+  durationMinutes Int                // 45, 120, 120, 120
+  totalQuestions  Int                // 50, 50, 50, 100
+  passingScore    Float              // 0 (ubicación), 70, 70, 75
+  coverageFrom    String?            // A1_C00
+  coverageTo      String?            // A1_C05 / A1_C11 / A1_C18
+  description     String?
+  isPublished     Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  results         ExamResult[]
+
+  @@index([type])
+  @@index([weekNumber])
+}
+
+model ExamResult {
+  id           String   @id @default(uuid())
+  userId       String
+  examId       String
+  score        Float              // 0-100
+  percentage   Float              // mismo que score, por claridad
+  passed       Boolean
+  completedAt  DateTime @default(now())
+  exam         Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, examId])
+  @@index([userId])
+  @@index([examId])
+}
+
+
+// ===================================================================
+// EXAM QUESTION — Pool de ejercicios asignados a cada examen
+// ===================================================================
+model ExamQuestion {
+  id          String   @id @default(uuid())
+  examId      String
+  exerciseId  String
+  skill       Skill
+  order       Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  exam        Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
+  exercise    Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+
+  @@unique([examId, exerciseId])
+  @@index([examId, skill])
+  @@index([exerciseId])
+}
+
+
+// ===================================================================
+// TEACHER SCRIPT — Guion narrado del Teacher Virtual por leccion
+// ===================================================================
+model TeacherScript {
+  id        String   @id @default(uuid())
+  lessonId  String   @unique
+  title     String
+  content   String   // Guion completo del Teacher Virtual
+  duration  Int      @default(120) // Duracion estimada en segundos
+  updatedAt DateTime @updatedAt
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
 }

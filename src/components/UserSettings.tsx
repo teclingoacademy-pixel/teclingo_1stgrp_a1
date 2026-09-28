@@ -45,7 +45,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import { GlassCard } from './GlassCard';
 import { useAppContext, UserRole } from '../context/AppContext';
 import { ModuleManagement } from './ModuleManagement';
-import { guardarPerfil, obtenerPerfilCompleto, uploadAvatar, uploadCertificationDocument, misGruposIngles, listarHorariosDisponiblesDocente } from '../services/identityService';
+import { guardarPerfil, obtenerPerfilCompleto, uploadAvatar, uploadCertificationDocument, misGruposIngles, listarHorariosDisponiblesDocente, guardarDirectorProfile, guardarTeacherProfile, guardarStudentProfile } from '../services/identityService';
+import { CredentialPreviewCard } from './CredentialPreviewCard';
+import { downloadCredentialCardPdf, shareCredentialCardPdf, CredentialCardData } from '../services/credentialPdfService';
+import { WhatsAppButton, WHATSAPP_SALES_MESSAGE } from './WhatsAppButton';
 
 export function UserSettings({ 
   role, 
@@ -352,6 +355,8 @@ export function UserSettings({
         bio: String(perfil.bio ?? prev.bio ?? ''),
         curp: (perfil.curp as string) ?? prev.curp,
         birthDate: normDate(perfil.birth_date) || prev.birthDate,
+        degree: (perfil.degree as string) ?? prev.degree,
+        experienceYears: (perfil.experience_years as number) ?? prev.experienceYears,
       }));
       setInstData(prev => ({
         ...prev,
@@ -366,6 +371,7 @@ export function UserSettings({
         instagram: (perfil.instagram as string) ?? prev.instagram,
         linkedin: (perfil.linkedin as string) ?? prev.linkedin,
         modalidad: (perfil.modalidad as string) ?? prev.modalidad,
+        semestres: (perfil.semestres as string) ?? prev.semestres,
         // Leer carreras de columnas carrera_1..carrera_7 (columnas separadas)
         carreras: [
           perfil.carrera_1, perfil.carrera_2, perfil.carrera_3,
@@ -519,7 +525,9 @@ export function UserSettings({
     birthDate: '',
     bio: '',
     email: '',
-    avatar: ''
+    avatar: '',
+    degree: '',
+    experienceYears: 0
   });
 
   // Docente asignado al grupo del alumno (cargado desde Google Sheets CLE)
@@ -533,6 +541,14 @@ export function UserSettings({
   } | null>(null);
   const [isLoadingTeacher, setIsLoadingTeacher] = useState(false);
 
+  // REGLA UNIVERSAL — Grupo del alumno (primer grupo activo) para la credencial institucional
+  const [studentGrupo, setStudentGrupo] = useState<{
+    nombre: string;
+    grupo: string;
+    nivel: string;
+    grupoId: string;
+  } | null>(null);
+
   // Cargar docente del grupo del alumno desde Google Sheets
   useEffect(() => {
     if (effectiveRole !== 'ALUMNO' || !userEmail) return;
@@ -543,6 +559,13 @@ export function UserSettings({
         const misGrupos = await misGruposIngles(userEmail);
         if (misGrupos.length > 0) {
           const primerGrupo = misGrupos[0];
+          // REGLA UNIVERSAL: guardar el grupo del alumno (credencial institucional)
+          setStudentGrupo({
+            nombre: primerGrupo.nombre || '',
+            grupo: primerGrupo.grupo || '',
+            nivel: primerGrupo.nivel || '',
+            grupoId: primerGrupo.grupo_id || '',
+          });
           const docenteEmail = primerGrupo.docente_email;
           const docenteId = primerGrupo.docente_id;
           if (docenteEmail) {
@@ -636,6 +659,15 @@ export function UserSettings({
   ];
   // nivel_ingles se deriva de modulo_tec en el backend; no se expone al usuario.
 
+  // Formato automático de teléfono México: +52-XXX-XXX-XXXX
+  const formatPhoneMX = (raw: string): string => {
+    const digits = raw.replace(/\D/g, '').replace(/^52/, ''); // quitar todo lo que no sea dígito, quitar 52 inicial si lo tiene
+    const d = digits.slice(0, 10); // max 10 dígitos
+    if (d.length <= 3) return d;
+    if (d.length <= 6) return `${d.slice(0,3)}-${d.slice(3)}`;
+    return `+52-${d.slice(0,3)}-${d.slice(3,6)}-${d.slice(6)}`;
+  };
+
   const getProfileData = () => {
     // Email es identidad y SIEMPRE viene del Lake (no del estado local hardcoded).
     const emailReal = userEmail || (
@@ -661,7 +693,7 @@ export function UserSettings({
         semestre: studentData.semestre,
         moduloTec: studentData.moduloTec,
         setName: (name: string) => setStudentData(prev => ({ ...prev, name })),
-        setPhone: (phone: string) => setStudentData(prev => ({ ...prev, phone })),
+        setPhone: (phone: string) => setStudentData(prev => ({ ...prev, phone: formatPhoneMX(phone) })),
         setBio: (bio: string) => setStudentData(prev => ({ ...prev, bio })),
         setAvatar: (avatar: string) => setStudentData(prev => ({ ...prev, avatar })),
         setCurp: (curp: string) => setStudentData(prev => ({ ...prev, curp })),
@@ -684,7 +716,7 @@ export function UserSettings({
         bio: dirData.bio,
         birthDate: dirData.birthDate,
         setName: (name: string) => setDirData(prev => ({ ...prev, name })),
-        setPhone: (phone: string) => setDirData(prev => ({ ...prev, phone })),
+        setPhone: (phone: string) => setDirData(prev => ({ ...prev, phone: formatPhoneMX(phone) })),
         setBio: (bio: string) => setDirData(prev => ({ ...prev, bio })),
         setAvatar: (avatar: string) => setDirData(prev => ({ ...prev, avatar })),
         setCurp: (curp: string) => setDirData(prev => ({ ...prev, curp })),
@@ -703,7 +735,7 @@ export function UserSettings({
         specialties: teacherData.specialties,
         id_empleado: teacherData.id_empleado,
         setName: (name: string) => setTeacherData(prev => ({ ...prev, name })),
-        setPhone: (phone: string) => setTeacherData(prev => ({ ...prev, phone })),
+        setPhone: (phone: string) => setTeacherData(prev => ({ ...prev, phone: formatPhoneMX(phone) })),
         setBio: (bio: string) => setTeacherData(prev => ({ ...prev, bio })),
         setAvatar: (avatar: string) => setTeacherData(prev => ({ ...prev, avatar })),
         setCurp: (curp: string) => setTeacherData(prev => ({ ...prev, curp })),
@@ -853,18 +885,72 @@ export function UserSettings({
     }
     try {
       const res = await guardarPerfil({ email: userEmail, rol: effectiveRole as 'ALUMNO' | 'DOCENTE' | 'DIRECTOR', campos });
-      if (res.ok) {
-        const hoja = res.hoja ? ` en ${res.hoja}` : '';
-        setToastMessage(`Perfil guardado${hoja}`);
-        setShowToast(true);
-        setIsDirty(false);
-        // Re-leer el perfil desde el Lake para que la UI refleje EXACTAMENTE
-        // lo persistido (autoridad única = el Data Lake, no el estado local).
-        await cargarPerfilDesdeLake();
-      } else {
-        setToastMessage('Error al guardar: ' + (res.error || 'desconocido'));
-        setShowToast(true);
+
+      // Guardar en PostgreSQL SIEMPRE (independiente de Google Sheets)
+      try {
+        if (effectiveRole === 'DIRECTOR') {
+          await guardarDirectorProfile(userEmail, {
+            avatar: dirData.avatar || '',
+            phone: dirData.phone, bio: dirData.bio, curp: dirData.curp,
+            birthDate: dirData.birthDate, degree: dirData.degree,
+            experienceYears: String((dirData as any).experienceYears || 0),
+            institutionName: instData.name, institutionLogo: institutionLogo,
+            slogan: instData.slogan, instPhone: instData.phone,
+            address: instData.address, instEmail: instData.email,
+            facebook: instData.facebook, instagram: instData.instagram,
+            linkedin: instData.linkedin, institutionCode: instData.institution_code,
+            institutionType: instData.institution_type,
+            carrera1: instData.carreras[0], carrera2: instData.carreras[1],
+            carrera3: instData.carreras[2], carrera4: instData.carreras[3],
+            carrera5: instData.carreras[4], carrera6: instData.carreras[5],
+            carrera7: instData.carreras[6],
+            turnoMatutino: instData.turnos.includes('MATUTINO'),
+            turnoVespertino: instData.turnos.includes('VESPERTINO'),
+            turnoSemiEscolarizado: instData.turnos.includes('SEMI-ESCOLARIZADO'),
+            turnoSabatino: instData.turnos.includes('SABATINO'),
+            turnoDistancia: instData.turnos.includes('DISTANCIA / EN LÍNEA'),
+            modalidad: instData.modalidad,
+            semestres: instData.semestres,
+          });
+        } else if (effectiveRole === 'DOCENTE') {
+          await guardarTeacherProfile(userEmail, {
+            avatar: teacherData.avatar || '',
+            phone: teacherData.phone, bio: teacherData.bio, curp: teacherData.curp,
+            birthDate: teacherData.birthDate, degree: teacherData.degree,
+            experienceYears: String(teacherData.years_of_experience || 0),
+            specialties: JSON.stringify(teacherData.specialties),
+            certifications: JSON.stringify(teacherData.certifications),
+            institutionCode: teacherData.institution_code,
+            directorEmail: teacherData.director_email,
+          });
+        } else if (effectiveRole === 'ALUMNO') {
+          await guardarStudentProfile(userEmail, {
+            avatar: studentData.avatar || '',
+            phone: studentData.phone, bio: studentData.bio, curp: studentData.curp,
+            birthDate: studentData.birthDate,
+            experienceYears: String((studentData as any).experienceYears || 0),
+            numeroControl: studentData.studentNumber,
+            carrera: studentData.career, turno: studentData.shift,
+            semestre: studentData.semestre, moduloTec: studentData.moduloTec,
+            nivelIngles: studentData.level,
+            institutionCode: studentData.institution_code,
+            directorEmail: studentData.director_email,
+          });
+        }
+      } catch (pgErr) {
+        console.error('Error guardando en PostgreSQL:', pgErr);
       }
+
+      const hoja = res.hoja ? ` en ${res.hoja}` : '';
+      setToastMessage(`Perfil guardado${hoja}`);
+      setShowToast(true);
+      setIsDirty(false);
+      // Re-leer el perfil desde el Lake para que la UI refleje EXACTAMENTE
+      // lo persistido (autoridad única = el Data Lake, no el estado local).
+      await cargarPerfilDesdeLake();
+      setToastMessage(res.ok ? 'Perfil guardado' : 'Perfil guardado (PostgreSQL)');
+      setShowToast(true);
+      setIsDirty(false);
     } catch (err) {
       setToastMessage('Error de conexion al guardar perfil');
       setShowToast(true);
@@ -929,16 +1015,32 @@ export function UserSettings({
 
       const result = await uploadAvatar(userEmail, base64, file.name, file.type);
       if (result.ok && result.fileUrl) {
-        // Actualizar el estado local del avatar
+        const newAvatarUrl = result.fileUrl;
+
+        // 1) Actualizar el estado local
         if (effectiveRole === 'ALUMNO') {
-          setStudentData(prev => ({ ...prev, avatar: result.fileUrl! }));
+          setStudentData(prev => ({ ...prev, avatar: newAvatarUrl }));
         } else if (effectiveRole === 'DOCENTE') {
-          setTeacherData(prev => ({ ...prev, avatar: result.fileUrl! }));
+          setTeacherData(prev => ({ ...prev, avatar: newAvatarUrl }));
         } else {
-          setDirData(prev => ({ ...prev, avatar: result.fileUrl! }));
+          setDirData(prev => ({ ...prev, avatar: newAvatarUrl }));
         }
-        setIsDirty(true);
-        setToastMessage('✅ Avatar subido a Google Drive');
+
+        // 2) AUTO-GUARDAR en el backend (independiente del botón Confirmar)
+        try {
+          if (effectiveRole === 'ALUMNO') {
+            await guardarStudentProfile(userEmail, { avatar: newAvatarUrl });
+          } else if (effectiveRole === 'DOCENTE') {
+            await guardarTeacherProfile(userEmail, { avatar: newAvatarUrl });
+          } else {
+            await guardarDirectorProfile(userEmail, { avatar: newAvatarUrl });
+          }
+        } catch (persistErr) {
+          console.warn('[Avatar] No se pudo persistir al backend:', persistErr);
+        }
+
+        setIsDirty(false); // Ya está guardado en backend
+        setToastMessage('✅ Avatar guardado');
         setShowToast(true);
       } else {
         setToastMessage('❌ Error al subir: ' + (result.error || 'desconocido'));
@@ -968,73 +1070,22 @@ export function UserSettings({
     </button>
   );
 
-  const DigitalCard = () => (
-    <div className="relative group w-full max-w-[340px] sm:max-w-sm mx-auto">
-      <motion.div 
-        layoutId="digital-card"
-        className="aspect-[1.58/1] w-full neo-glass rounded-3xl sm:rounded-[2.5rem] border-white/20 p-4 sm:p-8 flex flex-col justify-between overflow-hidden relative shadow-[0_20px_50px_rgba(0,0,0,0.4)]"
-      >
-        {/* Chips & Textures */}
-        <div className="absolute top-0 right-0 w-24 h-24 sm:w-32 sm:h-32 bg-[#38BDF8]/10 blur-[40px] sm:blur-[50px] -translate-y-1/2 translate-x-1/2" />
-        <div className="absolute bottom-0 left-0 w-16 h-16 sm:w-24 sm:h-24 bg-[#DEFF9A]/5 blur-[30px] sm:blur-[40px] translate-y-1/2 -translate-x-1/2" />
-        
-        <div className="flex justify-between items-start relative z-10 gap-2">
-          <div className="flex gap-2 sm:gap-4 min-w-0 flex-1">
-               <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-xl sm:rounded-2xl bg-black/40 border border-white/20 overflow-hidden shrink-0 flex items-center justify-center">
-               {profile.avatar ? (
-                 <img src={profile.avatar} className="w-full h-full object-cover" alt="Avatar" />
-               ) : (
-                 <User size={20} className="text-white/20" />
-               )}
-             </div>
-            <div className="min-w-0 flex-1">
-               <h3 className="text-white text-[11px] sm:text-lg font-black tracking-tight leading-none uppercase italic truncate" title={profile.name}>{profile.name}</h3>
-               <p className="text-[#38BDF8] text-[8px] sm:text-[10px] font-black uppercase tracking-wider sm:tracking-widest mt-1 truncate">{effectiveRole === 'ALUMNO' ? 'Alumno Inmersivo A1' : effectiveRole === 'DIRECTOR' ? 'Director Académico' : teacherData.degree}</p>
-               <div className="flex flex-wrap gap-1 mt-1 sm:mt-2">
-                  {(effectiveRole === 'ALUMNO' ? ['Pioneers G1', 'Active Learner'] : effectiveRole === 'DIRECTOR' ? ['Plataforma', 'Gestión'] : teacherData.specialties.slice(0, 2)).map(s => (
-                    <span key={s} className="text-[6px] sm:text-[7px] font-black text-white/40 border border-white/10 px-1 sm:px-1.5 py-0.5 rounded bg-white/5 uppercase truncate max-w-[70px]">{s}</span>
-                  ))}
-               </div>
-            </div>
-          </div>
-<div className="text-right shrink-0">
-             {institutionLogo ? <img src={institutionLogo} className="w-6 h-6 sm:w-8 sm:h-8 ml-auto mb-1 opacity-60" alt="Logo" /> : null}
-             <p className="text-white/20 text-[6px] sm:text-[8px] font-black uppercase tracking-widest">
-                ID: {effectiveRole === 'ALUMNO'
-                  ? (studentData.userId || 'usr_xxx')
-                  : effectiveRole === 'DIRECTOR'
-                    ? (instData.institution_code || 'DIR-XXXXXX')
-                    : (teacherData.id_empleado || 'usr_xxx')}
-              </p>
-           </div>
-        </div>
-
-        <div className="flex items-end justify-between relative z-10 mt-2">
-          <div className="space-y-0.5">
-             <p className="text-white/30 text-[6px] sm:text-[8px] font-black uppercase tracking-[0.2em] sm:tracking-[0.3em]">Institutional Verification</p>
-             <div className="flex items-center gap-1 sm:gap-2">
-                <ShieldCheck size={10} className={`${effectiveRole === 'ALUMNO' ? "text-[#22D3EE]" : "text-[#4ADE80]"} sm:size-[14px] shrink-0`} />
-                <span className="text-white text-[7px] sm:text-[10px] font-mono tracking-tighter uppercase whitespace-nowrap">{effectiveRole === 'ALUMNO' ? 'VERIFIED STUDENT' : effectiveRole === 'DIRECTOR' ? 'VERIFIED DIRECTOR' : 'VERIFIED DOCENTE ELITE'}</span>
-             </div>
-          </div>
-          <div className="w-10 h-10 sm:w-16 sm:h-16 bg-white p-0.5 sm:p-1 rounded-lg sm:rounded-xl shadow-2xl shrink-0 flex items-center justify-center">
-             <QRCodeSVG value={`TECLINGO:${profile.userId || userEmail || 'unknown'}`} size={56} bgColor="white" fgColor="#061a1a" level="M" />
-          </div>
-        </div>
-      </motion.div>
-      
-      {/* Decorative background shadow */}
-      <div className="absolute -inset-4 bg-[#38BDF8]/5 blur-3xl -z-10 opacity-0 group-hover:opacity-100 transition-opacity" />
-    </div>
-  );
-
   return (
     <div className="pb-16 lg:pb-32 px-2 sm:px-0">
-       {/* Header */}
-       <header className="mb-3 sm:mb-8">
-          <h2 className="text-[#38BDF8] text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] mb-1 sm:mb-2">Academic Profile</h2>
-          <h1 className="text-xl sm:text-3xl font-black text-white uppercase tracking-tight">Configuración</h1>
-       </header>
+{/* Header */}
+   <header className="mb-3 sm:mb-8 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div>
+         <h2 className="text-[#38BDF8] text-[9px] sm:text-[10px] font-black uppercase tracking-[0.3em] sm:tracking-[0.4em] mb-1 sm:mb-2">Academic Profile</h2>
+         <h1 className="text-xl sm:text-3xl font-black text-white uppercase tracking-tight">Configuración</h1>
+      </div>
+      <WhatsAppButton
+        label="Ventas y Servicios"
+        sublabel="WhatsApp 8461108789"
+        message={WHATSAPP_SALES_MESSAGE}
+        iconSize={18}
+        className="px-5 py-3.5 w-full sm:w-auto"
+      />
+   </header>
 
        {/* Sidebar de Navegación — horizontal scroll en mobile */}
 <div className="mb-4 lg:mb-6 -mx-2 px-2 overflow-x-auto no-scrollbar">
@@ -1060,11 +1111,11 @@ export function UserSettings({
              <span className="text-[10px] font-black uppercase tracking-widest text-white/60">Estatus Académico</span>
           </div>
           <p className="text-[20px] font-black text-white mb-1 uppercase tracking-tighter italic">
-            {effectiveRole === 'ALUMNO' ? 'ALUMNO INMERSIVO' : 'DOCENTE ELITE'}
+            {effectiveRole === 'ALUMNO' ? 'ALUMNO INMERSIVO' : effectiveRole === 'DIRECTOR' ? 'DIRECTOR GENERAL' : 'DOCENTE ELITE'}
           </p>
           <p className="text-[8px] text-white/30 font-bold uppercase tracking-widest leading-relaxed">
             {effectiveRole === 'ALUMNO' 
-              ? 'Nivel A1 validado por TECLINGO AI Dallas Campus.' 
+              ? `Nivel ${studentData.level || 'A1'} validado por TECLINGO AI Dallas Campus.` 
               : 'Nivel de autoridad académica validado por la institución.'}
           </p>
        </div>
@@ -1141,11 +1192,17 @@ export function UserSettings({
                                           reader.onerror = reject;
                                           reader.readAsDataURL(file);
                                         });
-                                        const result = await uploadAvatar(userEmail, base64, file.name, file.type);
+                                        const result = await uploadAvatar(userEmail, base64, file.name, file.type, 'logos');
                                         if (result.ok && result.fileUrl) {
-                                          setInstitutionLogo(result.fileUrl);
-                                          setIsDirty(true);
-                                          setToastMessage('✅ Logo subido correctamente');
+                                          const newLogoUrl = result.fileUrl;
+                                          setInstitutionLogo(newLogoUrl);
+                                          try {
+                                            await guardarDirectorProfile(userEmail, { institutionLogo: newLogoUrl });
+                                          } catch (persistErr) {
+                                            console.warn('[Logo] No se pudo persistir al backend:', persistErr);
+                                          }
+                                          setIsDirty(false);
+                                          setToastMessage('✅ Logo guardado');
                                           setShowToast(true);
                                         } else {
                                           setToastMessage('❌ Error al subir logo: ' + (result.error || 'desconocido'));
@@ -1209,8 +1266,9 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
                             <input 
                              type="text" 
                              value={instData.phone} 
-                             onChange={(e) => { setInstData({...instData, phone: e.target.value}); setIsDirty(true); }}
-                             placeholder="+52 800 000 0000"
+                             onChange={(e) => { setInstData({...instData, phone: formatPhoneMX(e.target.value)}); setIsDirty(true); }}
+                             placeholder="800-000-0000"
+                             maxLength={16}
                              className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white text-xs font-bold outline-none focus:border-[#38BDF8]/40 transition-all font-mono"
                             />
                          </div>
@@ -1471,11 +1529,9 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
                                      className="bg-[#DEFF9A]/10 border border-[#DEFF9A]/20 rounded-lg text-[8px] sm:text-[9px] font-black uppercase tracking-widest text-[#DEFF9A] hover:bg-[#DEFF9A]/20 transition-all px-2 py-1 sm:px-3 sm:py-1.5 cursor-pointer"
                                     >
                                       <option value="">+ Agregar turno</option>
-                                      <option value="MATUTINO">Matutino</option>
-                                      <option value="VESPERTINO">Vespertino</option>
-                                      <option value="SEMI-ESCOLARIZADO">Semi-escolarizado</option>
-                                      <option value="SABATINO">Sabatino</option>
-                                      <option value="DISTANCIA / EN LÍNEA">Distancia / En línea</option>
+                                      {TURNOS_INSTITUCION.filter(t => !instData.turnos.includes(t.toUpperCase())).map(t => (
+                                        <option key={t} value={t.toUpperCase()}>{t}</option>
+                                      ))}
                                     </select>
                                  </div>
                                 <div className="flex flex-wrap gap-2 p-3 bg-white/5 rounded-xl border border-white/10">
@@ -1507,31 +1563,119 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
               )}
 
               {activeTab === 'DIGITAL_CARD' && (
-                <motion.div 
-                  key="card-preview"
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  exit={{ opacity: 0, scale: 0.95 }}
-                   className="space-y-4 sm:space-y-8"
+  <motion.div
+    key="card-preview"
+    initial={{ opacity: 0, scale: 0.95 }}
+    animate={{ opacity: 1, scale: 1 }}
+    exit={{ opacity: 0, scale: 0.95 }}
+    className="space-y-4 sm:space-y-8"
+  >
+    <GlassCard title="Credential Preview" icon={ShieldCheck} accent="cyan">
+      <div className="flex flex-col items-center gap-4 sm:gap-12 py-4 sm:py-12">
+        {(() => {
+          const role: 'ALUMNO' | 'DOCENTE' | 'DIRECTOR' =
+            effectiveRole === 'ALUMNO' ? 'ALUMNO' :
+            effectiveRole === 'DIRECTOR' ? 'DIRECTOR' : 'DOCENTE';
+
+          const roleLabel = role === 'ALUMNO'
+            ? `ALUMNO ${studentData.level || studentData.moduloTec || ''}`.trim()
+            : role === 'DIRECTOR'
+              ? 'DIRECTOR ACADÉMICO'
+              : (teacherData.degree || 'DOCENTE');
+
+          const controlLabel = role === 'ALUMNO' ? 'CTL' : role === 'DIRECTOR' ? 'DIR' : 'DOC';
+
+          const controlValue = role === 'ALUMNO'
+            ? (studentData.studentNumber || studentData.studentId || (studentData as any).userId || profile.userId || '')
+            : role === 'DIRECTOR'
+              ? ((instData as any).institution_code || '')
+              : ((teacherData as any).id_empleado || '');
+
+          const institutionCode = role === 'ALUMNO'
+            ? (studentData as any).institution_code
+            : role === 'DIRECTOR'
+              ? (instData as any).institution_code
+              : (teacherData as any).institution_code;
+
+          const institutionName = (instData as any).institution_name
+            || (studentData as any).dir_institution_name
+            || (teacherData as any).dir_institution_name
+            || '';
+
+          const nivel    = role === 'ALUMNO' ? studentData.level : role === 'DOCENTE' ? teacherData.degree : undefined;
+          const carrera  = role === 'ALUMNO' ? studentData.career : undefined;
+          const semestre = role === 'ALUMNO' ? studentData.semestre : undefined;
+          const modulo   = role === 'ALUMNO' ? studentData.moduloTec : undefined;
+
+          const previewData = {
+            name: profile.name,
+            role,
+            roleLabel,
+            institutionName,
+            institutionLogo,
+            institutionCode,
+            controlLabel,
+            controlValue,
+            nivel,
+            grupo: role === 'ALUMNO' ? studentGrupo : undefined,
+            modalidad: (instData as any).modalidad,
+            career: carrera,
+            semestre,
+            modulo,
+            avatar: profile.avatar,
+            verified: true,
+            userId: profile.userId || profile.email,
+          };
+
+          const buildPdfData = (): CredentialCardData => ({
+            name: profile.name || '',
+            role,
+            roleLabel,
+            email: profile.email,
+            curp: profile.curp,
+            controlLabel,
+            controlValue,
+            nivel,
+            grupo: (studentGrupo && (studentGrupo.grupo || studentGrupo.nombre)) || undefined,
+            career: carrera,
+            semestre: semestre ? String(semestre) : undefined,
+            modalidad: (instData as any).modalidad,
+            institutionName,
+            institutionCode,
+            institutionLogoUrl: institutionLogo,
+            avatarUrl: profile.avatar,
+            userId: profile.userId || profile.email,
+          });
+
+          return (
+            <>
+              <CredentialPreviewCard data={previewData as any} />
+
+              <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full max-w-sm">
+                <button
+                  onClick={() => downloadCredentialCardPdf(buildPdfData())}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3.5 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all"
                 >
-                   <GlassCard title="Credential Preview" icon={ShieldCheck} accent="cyan">
-                      <div className="flex flex-col items-center gap-4 sm:gap-12 py-4 sm:py-12">
-                         <DigitalCard />
-                         <div className="flex flex-col sm:flex-row gap-2 sm:gap-4 w-full sm:w-auto">
-                            <button className="flex items-center justify-center gap-2 px-4 sm:px-8 py-2.5 sm:py-4 bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all">
-                               <Download size={14} /> Descargar PDF
-                            </button>
-                            <button className="flex items-center justify-center gap-2 px-4 sm:px-8 py-2.5 sm:py-4 bg-[#38BDF8] rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-white shadow-[0_10px_30px_rgba(56,189,248,0.4)] hover:scale-105 transition-all">
-                               <Share2 size={14} /> Compartir
-                            </button>
-                         </div>
-                         <p className="text-white/20 text-[8px] sm:text-[9px] font-bold uppercase tracking-widest text-center max-w-sm italic px-4">
-                            Esta tarjeta sirve como tu identificación oficial ante alumnos de nuevo ingreso y pares académicos.
-                         </p>
-                      </div>
-                   </GlassCard>
-                </motion.div>
-             )}
+                  <Download size={14} /> Descargar PDF
+                </button>
+                <button
+                  onClick={() => shareCredentialCardPdf(buildPdfData())}
+                  className="flex-1 flex items-center justify-center gap-2 px-4 sm:px-6 py-2.5 sm:py-3.5 bg-[#DEFF9A] rounded-xl sm:rounded-2xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest text-[#061a1a] shadow-[0_10px_30px_rgba(222,255,154,0.4)] hover:scale-105 transition-all"
+                >
+                  <Share2 size={14} /> Compartir
+                </button>
+              </div>
+
+              <p className="text-center text-white/30 text-[9px] sm:text-[10px] font-medium italic max-w-sm leading-relaxed px-4">
+                Esta tarjeta sirve como tu identificación oficial ante alumnos de nuevo ingreso y pares académicos.
+              </p>
+            </>
+          );
+        })()}
+      </div>
+    </GlassCard>
+  </motion.div>
+)}
 
              {activeTab === 'PERSONAL' && (
                <motion.div 
@@ -1630,38 +1774,27 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
                          </div>
                          {effectiveRole === 'ALUMNO' && (
                            <>
-                              {/* ID Usuario — solo lectura, generado por la APP */}
-                              <div className="space-y-1.5 sm:space-y-2">
-                                 <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">ID Usuario (solo lectura)</label>
-                                 <input 
-                                  type="text" 
-                                  value={profile.userId || ''} 
-                                  readOnly
-                                  className="w-full bg-white/[0.02] border border-white/5 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white/40 text-xs font-bold outline-none cursor-not-allowed font-mono"
-                                 />
-                                 <p className="text-[7px] sm:text-[8px] text-white/15 ml-1 hidden sm:block">ID único generado por la app. Aparece en tu QR code.</p>
-                              </div>
-                              {/* Número de Control — ID que la institución asigna */}
-                              <div className="space-y-1.5 sm:space-y-2">
-                                 <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">Número de Control</label>
-                                 <input 
-                                  type="text" 
-                                  value={profile.studentId || ''} 
-                                  onChange={(e) => { profile.setStudentId?.(e.target.value); setIsDirty(true); }}
-                                  placeholder="Ej: INGIND-001"
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white text-xs font-bold outline-none focus:border-[#38BDF8]/40 transition-all font-mono"
-                                 />
-                              </div>
-                              {/* Matrícula / Student ID */}
-                              <div className="space-y-1.5 sm:space-y-2">
-                                 <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">Matrícula</label>
-                                 <input 
-                                  type="text" 
-                                  value={profile.studentNumber || ''} 
-                                  onChange={(e) => { profile.setStudentNumber?.(e.target.value); setIsDirty(true); }}
-                                  placeholder="Ej: 2024001234"
-                                  className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white text-xs font-bold outline-none focus:border-[#38BDF8]/40 transition-all font-mono"
-                                 />
+                               {/* ID Usuario — solo lectura, generado por la APP */}
+                               <div className="space-y-1.5 sm:space-y-2">
+                                  <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">ID Usuario (solo lectura)</label>
+                                  <input 
+                                   type="text" 
+                                   value={profile.userId || ''} 
+                                   readOnly
+                                   className="w-full bg-white/[0.02] border border-white/5 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white/40 text-xs font-bold outline-none cursor-not-allowed font-mono"
+                                  />
+                                  <p className="text-[7px] sm:text-[8px] text-white/15 ml-1 hidden sm:block">ID único generado por la app. Aparece en tu QR code.</p>
+                               </div>
+                               {/* Número de Control — ID que la institución asigna */}
+                               <div className="space-y-1.5 sm:space-y-2">
+                                  <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">Número de Control</label>
+                                  <input 
+                                   type="text" 
+                                   value={profile.studentNumber || ''} 
+                                   onChange={(e) => { profile.setStudentNumber?.(e.target.value); setIsDirty(true); }}
+                                   placeholder="Ej: 2024001234"
+                                   className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white text-xs font-bold outline-none focus:border-[#38BDF8]/40 transition-all font-mono"
+                                  />
                                </div>
 {/* OCULTO: Campo Carrera — eliminado para versión exclusiva de inglés
 <div className="space-y-1.5 sm:space-y-2">
@@ -1728,6 +1861,38 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
                                </select>
                             </div>
                           )}
+                           {effectiveRole === 'DIRECTOR' && (
+                            <div className="space-y-1.5 sm:space-y-2">
+                               <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">Grado Académico</label>
+                               <select
+                                value={dirData.degree}
+                                onChange={(e) => { setDirData({...dirData, degree: e.target.value}); setIsDirty(true); }}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-[#DEFF9A] text-xs font-black outline-none focus:border-[#38BDF8]/40 transition-all appearance-none cursor-pointer uppercase"
+                               >
+                                <option value="" className="bg-[#0b0f19]">Selecciona grado…</option>
+                                <option value="LICENCIATURA" className="bg-[#061a1a] text-[#DEFF9A]">LICENCIATURA</option>
+                                <option value="INGENIERÍA" className="bg-[#061a1a] text-[#DEFF9A]">INGENIERÍA</option>
+                                <option value="MAESTRÍA" className="bg-[#061a1a] text-[#DEFF9A]">MAESTRÍA</option>
+                                <option value="DOCTORADO" className="bg-[#061a1a] text-[#DEFF9A]">DOCTORADO</option>
+                                <option value="DOCENTE" className="bg-[#061a1a] text-[#DEFF9A]">DOCENTE</option>
+                                <option value="ADMINISTRATIVO" className="bg-[#061a1a] text-[#DEFF9A]">ADMINISTRATIVO</option>
+                                <option value="TÉCNICO" className="bg-[#061a1a] text-[#DEFF9A]">TÉCNICO</option>
+                               </select>
+                            </div>
+                           )}
+                           {effectiveRole === 'DIRECTOR' && (
+                            <div className="space-y-1.5 sm:space-y-2">
+                               <label className="text-[8px] sm:text-[9px] font-black text-white/20 uppercase tracking-widest ml-1">Años de Experiencia</label>
+                               <input
+                                type="number"
+                                min="0"
+                                max="60"
+                                value={dirData.experienceYears}
+                                onChange={(e) => { setDirData({...dirData, experienceYears: parseInt(e.target.value) || 0}); setIsDirty(true); }}
+                                className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-[#DEFF9A] text-xs font-black outline-none focus:border-[#38BDF8]/40 transition-all"
+                               />
+                            </div>
+                           )}
 
                           {effectiveRole === 'DOCENTE' && (
                             <div className="space-y-1.5 sm:space-y-2">
@@ -1829,6 +1994,8 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
                              type="text" 
                              value={profile.phone || ''} 
                              onChange={(e) => { profile.setPhone(e.target.value); setIsDirty(true); }}
+                             placeholder="846-123-4567"
+                             maxLength={16}
                              className="w-full bg-white/5 border border-white/10 rounded-xl sm:rounded-2xl py-2.5 sm:py-4 px-3 sm:px-6 text-white text-xs font-bold outline-none focus:border-[#38BDF8]/40 transition-all font-mono"
                             />
                          </div>

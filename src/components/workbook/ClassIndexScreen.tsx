@@ -7,7 +7,7 @@
  * Muestra el catálogo de 35 clases con seguimiento de progreso, filtros por semana y búsqueda en tiempo real.
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   BookOpen, 
   Search, 
@@ -27,10 +27,11 @@ import {
   Flame,
   ArrowRight
 } from 'lucide-react';
-import { clases, SheetClaseRow, SheetProgresoUsuarioRow } from '@/data/workbook/googleDatasheetA1';
-import { mockProgresoUsuario } from '@/data/workbook/mockData';
+// FIX 2026-09-26: clases ahora viene del API /api/lessons (Prisma)
+import type { SheetClaseRow, SheetProgresoUsuarioRow } from '@/types/workbook/workbookRows';
 import { getClassTemperature } from '@/utils/workbook/classTemperature';
 import { getResumenProgresoForUser } from '@/services/workbook/resumenProgresoService';
+import { apiUrl } from '@/services/apiConfig';
 
 interface ClassIndexScreenProps {
   onSelectClass: (claseId: string) => void;
@@ -79,31 +80,98 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
   const [filtroTipo, setFiltroTipo] = useState<'todos' | 'original' | 'repaso' | 'taller'>('todos');
   const [viewMode, setViewMode] = useState<'xls' | 'cards'>('xls');
 
+  // FIX 2026-09-26: cargar clases desde /api/lessons
+  const [clases, setClases] = useState<SheetClaseRow[]>([]);
+  // FIX 2026-09-27: examenes oficiales (Ubicacion, Intermedio, Final)
+  const [examenes, setExamenes] = useState<Array<{
+    id: string; code: string; title: string; type: string;
+    weekNumber: number | null; totalQuestions: number;
+    durationMinutes: number; passingScore: number;
+  }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl('/api/lessons'))
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        if (res && res.success && Array.isArray(res.data)) {
+          console.log('[ClassIndexScreen] Clases cargadas:', res.data.length);
+          setClases(res.data);
+        } else {
+          console.warn('[ClassIndexScreen] Respuesta inesperada de /api/lessons:', res);
+        }
+      })
+      .catch((err) => console.warn('[ClassIndexScreen] Error cargando clases:', err));
+    return () => { cancelled = true; };
+  }, []);
+
+  // FIX 2026-09-27: cargar examenes oficiales
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl('/api/exams'))
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        if (res && res.success && Array.isArray(res.data)) {
+          // Filtrar solo los 3 oficiales: UBICACION, INTERMEDIO (1), FINAL
+          const oficiales = res.data.filter((e: any) =>
+            e.type === 'UBICACION' || e.code === 'EXAM_INT_1' || e.type === 'FINAL'
+          );
+          console.log('[ClassIndexScreen] Examenes cargados:', oficiales.length);
+          setExamenes(oficiales);
+        }
+      })
+      .catch((err) => console.warn('[ClassIndexScreen] Error cargando examenes:', err));
+    return () => { cancelled = true; };
+  }, []);
+
   // Obtener usuario activo
-  const activeUserId = useMemo(() => {
+  const { activeUserId, activeUserEmail } = useMemo(() => {
     try {
       const userRaw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
       if (userRaw) {
         const u = JSON.parse(userRaw);
-        if (u && u.user_id) return u.user_id;
+        return {
+          activeUserId: u?.user_id || 'demo_user_001',
+          activeUserEmail: u?.email || '',
+        };
       }
     } catch (e) {
       console.warn('Error al leer usuario para ClassIndexScreen:', e);
     }
-    return 'demo_user_001';
+    return { activeUserId: 'demo_user_001', activeUserEmail: '' };
   }, []);
 
-  // REGLA 4: Consultar RESUMEN_PROGRESO para el user_id actual
-  const resumenMap = useMemo(() => {
-    return getResumenProgresoForUser(activeUserId);
-  }, [activeUserId, customProgreso]);
+  // FIX 2026-09-26: Leer progreso real desde Prisma via API (antes era localStorage mock)
+  const [resumenMap, setResumenMap] = useState<Map<string, any>>(new Map());
+  useEffect(() => {
+    if (!activeUserId) return;
+    let cancelled = false;
+    const params = new URLSearchParams();
+    if (activeUserId) params.set('userId', activeUserId);
+    if (activeUserEmail) params.set('email', activeUserEmail);
+    fetch(apiUrl('/api/progress/summary') + '?' + params.toString())
+      .then((r) => r.json())
+      .then((res) => {
+        if (cancelled) return;
+        const ok = res && (res.success === true || res.ok === true);
+        if (ok && res.data) {
+          console.log('[ClassIndexScreen] Progreso recibido:', Object.keys(res.data).length, 'lecciones');
+          setResumenMap(new Map(Object.entries(res.data)));
+        } else {
+          console.warn('[ClassIndexScreen] Respuesta inesperada:', res);
+        }
+      })
+      .catch((err) => console.warn('[ClassIndexScreen] Error cargando progreso:', err));
+    return () => { cancelled = true; };
+  }, [activeUserId, activeUserEmail]);
 
   // Fuente secundaria de progreso detallado
   const activeProgreso: SheetProgresoUsuarioRow[] = useMemo(() => {
     if (customProgreso && customProgreso.length > 0) {
       return customProgreso;
     }
-    return mockProgresoUsuario;
+    return [];
   }, [customProgreso]);
 
   // Helper para consultar datos de RESUMEN_PROGRESO por clase
@@ -115,8 +183,9 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
       return {
         porcentaje_avance: pct,
         estado_clase: estado,
-        xp_ganado: fromResumen.xp_ganado ?? fromResumen.puntaje_obtenido ?? 0,
+        xp_ganado: fromResumen.score ?? fromResumen.xp_ganado ?? fromResumen.puntaje_obtenido ?? 0,
         reactivos_correctos: fromResumen.reactivos_correctos ?? 0,
+        reactivos_totales: fromResumen.reactivos_totales ?? 25,
         habilidades_completadas: fromResumen.habilidades_completadas ?? 0,
       };
     }
@@ -140,6 +209,7 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
       estado_clase: 'pendiente',
       xp_ganado: 0,
       reactivos_correctos: 0,
+      reactivos_totales: 25,
       habilidades_completadas: 0,
     };
   };
@@ -164,19 +234,64 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
 
       return coincideSemana && coincideTipo && coincideBusqueda;
     });
-  }, [filtroSemana, filtroTipo, busqueda]);
+  }, [clases, filtroSemana, filtroTipo, busqueda]);
+
+  // FIX 2026-09-27: mezcla clases + examenes en un solo array ordenado
+  const itemsOrdenados = useMemo(() => {
+    type Item = { isExam: boolean; clase_id: string; semana: number; orden: number; [k: string]: any };
+
+    const clasesItems: Item[] = clasesFiltradas.map((c) => ({
+      ...c, isExam: false, semana: c.semana, orden: c.clase_numero,
+    }));
+
+    // Filtro de semana aplica tambien a examenes (a menos que el filtro excluya la semana)
+    const examItems: Item[] = examenes
+      .map((e) => {
+        // Semana fija por tipo segun diseño curricular
+        // FIX 2026-09-27: posiciones exactas por code (definidas por planeacion curricular)
+        const EXAM_POS: Record<string, { semana: number; orden: number }> = {
+          EXAM_UBICACION: { semana: 1,  orden: 0.5 },   // antes de C00 (S1)
+          EXAM_INT_1:     { semana: 8,  orden: 999 },   // despues de C12 (fin S7)
+          EXAM_FINAL:     { semana: 11, orden: 18.5 },  // entre C17 (18) y C18 (19)
+        };
+        const pos = EXAM_POS[e.code] ?? { semana: e.weekNumber ?? 1, orden: 999 };
+        const semana = pos.semana;
+        const orden = pos.orden;
+        return {
+          isExam: true, clase_id: e.code, semana, orden,
+          exam: e,
+          titulo_clase: e.title,
+          tema_principal: 'Evaluación oficial',
+          tipo_contenido: 'examen',
+          duracion_min: e.durationMinutes,
+          sesion: '—',
+          clase_numero: 0,
+        } as Item;
+      })
+      .filter((e) => filtroSemana === null || e.semana === filtroSemana)
+      .filter((e) => filtroTipo === 'todos' || filtroTipo === 'original')  // siempre visibles salvo filtros raros
+      .filter((e) => {
+        const q = busqueda.toLowerCase().trim();
+        if (!q) return true;
+        return e.titulo_clase.toLowerCase().includes(q) || e.clase_id.toLowerCase().includes(q);
+      });
+
+    const all = [...clasesItems, ...examItems];
+    all.sort((a, b) => a.semana - b.semana || a.orden - b.orden);
+    return all;
+  }, [clasesFiltradas, examenes, filtroSemana, filtroTipo, busqueda]);
 
   // Estadísticas globales
   const totalClases = clases.length;
   const clasesCompletadas = useMemo(() => {
     return clases.filter((c) => getProgresoClase(c.clase_id) >= 100).length;
-  }, [activeProgreso]);
+  }, [clases, activeProgreso, resumenMap]);
 
   const progresoPromedio = useMemo(() => {
     if (totalClases === 0) return 0;
     const suma = clases.reduce((acc, c) => acc + getProgresoClase(c.clase_id), 0);
     return Math.round(suma / totalClases);
-  }, [activeProgreso, totalClases]);
+  }, [clases, activeProgreso, totalClases, resumenMap]);
 
   const xpTotal = useMemo(() => {
     return activeProgreso.reduce((acc, p) => acc + (p.correcto ? (p.puntaje_obtenido || 10) : 0), 0);
@@ -229,7 +344,7 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
             📚 Módulo A1 - TecLingo
           </h1>
           <p className="text-xs sm:text-base text-[#8A95A5] break-words">
-            35 clases · 90 horas pedagógicas · Certificación MCER A1
+            {totalClases || 19} clases · 90 horas pedagógicas · Certificación MCER A1
           </p>
         </header>
 
@@ -295,7 +410,7 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
                 className="bg-transparent text-white text-[11px] sm:text-xs font-medium outline-none cursor-pointer w-full"
               >
                 <option value="" className="bg-[#1A1D20] text-white">Todas las semanas</option>
-                {Array.from({ length: 18 }, (_, i) => (
+                {Array.from({ length: 15 }, (_, i) => (
                   <option key={i + 1} value={i + 1} className="bg-[#1A1D20] text-white">
                     Semana {i + 1}
                   </option>
@@ -441,7 +556,52 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5 font-mono text-xs">
-                  {clasesFiltradas.map((clase: SheetClaseRow, index: number) => {
+                  {itemsOrdenados.map((clase: any, index: number) => {
+                    // FIX 2026-09-27: fila de examen (render distinto)
+                    if (clase.isExam) {
+                      const e = clase.exam;
+                      return (
+                        <tr
+                          key={e.code}
+                          className="bg-indigo-950/40 border-l-4 border-l-indigo-400 hover:bg-indigo-900/50 transition-colors"
+                        >
+                          <td className="py-3 px-3 text-center border-r border-white/5 text-[11px] bg-indigo-900/30">
+                            📝
+                          </td>
+                          <td className="py-3 px-3 border-r border-white/5 whitespace-nowrap">
+                            <span className="px-2 py-0.5 rounded font-bold text-[11px] bg-indigo-500/25 text-indigo-200 border border-indigo-400/50">
+                              {e.code}
+                            </span>
+                          </td>
+                          <td className="py-3 px-2.5 text-center border-r border-white/5 text-indigo-200 font-bold">
+                            S{clase.semana}
+                          </td>
+                          <td className="py-3 px-2.5 text-center border-r border-white/5 text-[#8A95A5]">—</td>
+                          <td className="py-3 px-4 border-r border-white/5 font-sans font-bold text-indigo-100" colSpan={4}>
+                            {e.title}
+                          </td>
+                          <td className="py-3 px-2.5 text-center border-r border-white/5 text-indigo-200 text-[11px] font-mono">
+                            {e.totalQuestions}q · {e.durationMinutes}m
+                          </td>
+                          <td className="py-3 px-4 border-r border-white/5 text-[11px] text-[#8A95A5] text-center">—</td>
+                          <td className="py-3 px-3 text-center border-r border-white/5 whitespace-nowrap">
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-gray-500/20 text-gray-300 border border-gray-500/40 inline-flex items-center gap-1">
+                              🔒 Próximamente
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-center whitespace-nowrap">
+                            <button
+                              type="button"
+                              disabled
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-mono font-bold bg-gray-600/30 text-gray-400 cursor-not-allowed mx-auto"
+                            >
+                              Bloqueado
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    }
+
                     const datos = getDatosClase(clase.clase_id);
                     const progreso = datos.porcentaje_avance;
                     const temp = getClassTemperature(progreso);
@@ -450,7 +610,7 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
 
                     // Aqua styling for 100% complete row
                     const rowBgClass = is100
-                      ? 'bg-[#00F5D4]/5 hover:bg-[#00F5D4]/15 border-l-4 border-l-[#00F5D4]'
+                      ? 'bg-[#00F5D4]/12 hover:bg-[#00F5D4]/20 border-l-4 border-l-[#00F5D4] shadow-[inset_0_0_20px_rgba(0,245,212,0.08)]'
                       : index % 2 === 0
                       ? 'bg-[#15191D] hover:bg-[#1E252C]'
                       : 'bg-[#121619] hover:bg-[#1E252C]';
@@ -527,7 +687,7 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
                                 {progreso}%
                               </span>
                               <span className="text-[10px] text-[#8A95A5]">
-                                {datos.reactivos_correctos > 0 ? `${datos.reactivos_correctos}/50` : (is100 ? '50/50' : `${Math.round((progreso / 100) * 50)}/50`)}
+                                {datos.reactivos_correctos}/{datos.reactivos_totales ?? 25}
                               </span>
                             </div>
                             <div className="w-full bg-white/10 h-1.5 rounded-full overflow-hidden">
@@ -541,8 +701,8 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
 
                         {/* Status (Col I) - REGLA 4: pendiente (gris), en_progreso (azul), completada (verde) */}
                         <td className="py-3 px-3 text-center border-r border-white/5 whitespace-nowrap">
-                          <span className={`text-[10px] font-mono font-bold px-2.5 py-0.5 rounded-full border inline-flex items-center gap-1.5 ${estadoBadge.badgeClass}`}>
-                            <span className={`w-1.5 h-1.5 rounded-full ${estadoBadge.dotColor}`} />
+                          <span className={`text-[11px] font-mono font-black px-3 py-1 rounded-full border inline-flex items-center gap-1.5 uppercase tracking-wider ${estadoBadge.badgeClass}`}>
+                            <span className={`w-2 h-2 rounded-full ${estadoBadge.dotColor}`} />
                             <span>{estadoBadge.label}</span>
                           </span>
                         </td>
@@ -669,11 +829,11 @@ export const ClassIndexScreen: React.FC<ClassIndexScreenProps> = ({
                       <div className="flex items-center justify-between text-[11px] sm:text-xs font-mono mb-1">
                         <span className="flex items-center gap-1 text-[11px] text-[#8A95A5]">
                           {datos.reactivos_correctos > 0 ? (
-                            <span>{datos.reactivos_correctos}/50 reactivos ({datos.habilidades_completadas}/5 hab.)</span>
+                            <span>{datos.reactivos_correctos}/{datos.reactivos_totales ?? 25} reactivos ({datos.habilidades_completadas}/5 hab.)</span>
                           ) : is100 ? (
                             <span className="text-[#00F5D4] flex items-center gap-1 font-bold">
                               <CheckCircle2 className="w-3.5 h-3.5 text-[#00F5D4] shrink-0" />
-                              50/50 Reactivos
+                              {datos.reactivos_totales ?? 25}/{datos.reactivos_totales ?? 25} Reactivos
                             </span>
                           ) : (
                             <span>{temp.label}</span>

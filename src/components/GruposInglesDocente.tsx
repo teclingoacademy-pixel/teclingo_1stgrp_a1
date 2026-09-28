@@ -216,7 +216,11 @@ export function GruposInglesDocente() {
                   </div>
                   <div className="bg-white/5 rounded-lg px-3 py-2">
                     <p className="text-white/40 text-[10px]">Horario</p>
-                    <p className="text-white font-bold">{g.horario || '—'}</p>
+                    <p className="text-white font-bold">
+                      {g.sesiones && g.sesiones.length > 0
+                        ? g.sesiones.map(s => `${s.horaInicio}-${s.horaFin}`).join(', ')
+                        : '—'}
+                    </p>
                   </div>
                 </div>
 
@@ -246,11 +250,26 @@ export function GruposInglesDocente() {
                         <div className="space-y-2 max-h-64 overflow-y-auto">
                           {miembros.map(m => (
                             <div key={m.asignacion_id} className="flex items-center gap-2 bg-white/5 rounded-lg px-3 py-2">
-                              <div className="w-7 h-7 rounded-full bg-[#DEFF9A]/10 flex items-center justify-center text-[#DEFF9A] text-[10px] font-bold shrink-0">
-                                {m.nombre?.charAt(0) || '?'}
+                              {/* REGLA UNIVERSAL — avatar real del usuario */}
+                              <div className="relative w-8 h-8 rounded-full overflow-hidden shrink-0 bg-[#DEFF9A]/10 flex items-center justify-center">
+                                <span className="text-[#DEFF9A] text-[10px] font-bold">{m.nombre?.charAt(0)?.toUpperCase() || '?'}</span>
+                                {m.avatar && (
+                                  <img
+                                    src={m.avatar}
+                                    alt={m.nombre || 'Alumno'}
+                                    loading="lazy"
+                                    className="absolute inset-0 w-full h-full object-cover"
+                                    onError={e => { e.currentTarget.style.display = 'none'; }}
+                                  />
+                                )}
                               </div>
                               <div className="flex-1 min-w-0">
-                                <p className="text-white text-[11px] font-bold truncate">{m.nombre}</p>
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <p className="text-white text-[11px] font-bold truncate">{m.nombre}</p>
+                                  {m.numero_control && (
+                                    <span className="text-[#38BDF8] text-[7px] font-black font-mono px-1 py-0.5 rounded bg-[#38BDF8]/10 shrink-0">{m.numero_control}</span>
+                                  )}
+                                </div>
                                 <p className="text-white/30 text-[9px] truncate">{m.email}</p>
                               </div>
                               {/* Botón mensaje */}
@@ -369,17 +388,34 @@ export function GruposInglesDocente() {
           ) : (
             <div className="space-y-2">
               {alumnosFiltrados.map(a => (
-                <div key={a.asignacion_id} className="flex items-center gap-3 bg-white/5 border border-white/5 rounded-xl px-4 py-3 hover:border-[#DEFF9A]/20 transition-all">
-                  <div className="w-9 h-9 rounded-xl bg-[#DEFF9A]/10 flex items-center justify-center text-[#DEFF9A] text-xs font-black shrink-0">
-                    {a.nombre?.charAt(0) || '?'}
+                <div key={a.asignacion_id} className="flex items-center gap-3 sm:gap-4 bg-white/5 border border-white/5 rounded-xl sm:rounded-2xl px-3 sm:px-4 py-3 hover:border-[#DEFF9A]/20 hover:bg-white/[0.07] transition-all">
+                  {/* REGLA UNIVERSAL — avatar/imagen real del usuario para ubicación visual */}
+                  <div className="relative w-11 h-11 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl overflow-hidden shrink-0 bg-[#DEFF9A]/10 border border-white/10 flex items-center justify-center">
+                    <span className="text-[#DEFF9A] text-sm font-black">{a.nombre?.charAt(0)?.toUpperCase() || '?'}</span>
+                    {a.avatar && (
+                      <img
+                        src={a.avatar}
+                        alt={a.nombre || 'Alumno'}
+                        loading="lazy"
+                        className="absolute inset-0 w-full h-full object-cover"
+                        onError={e => { e.currentTarget.style.display = 'none'; }}
+                      />
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className="text-white text-xs font-bold truncate">{a.nombre}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      <span className="text-white/30 text-[9px] truncate">{a.email}</span>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="text-white text-xs sm:text-sm font-black truncate">{a.nombre}</p>
+                      {a.numero_control && (
+                        <span className="text-[#38BDF8] text-[7px] sm:text-[8px] font-black font-mono px-1.5 py-0.5 rounded bg-[#38BDF8]/10 border border-[#38BDF8]/20 shrink-0">{a.numero_control}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center flex-wrap gap-x-2 gap-y-1 mt-1">
+                      <span className="text-white/30 text-[9px] truncate max-w-[150px]">{a.email}</span>
                       <span className="text-white/10">•</span>
                       <span className="text-[#DEFF9A] text-[8px] font-bold px-1.5 py-0.5 rounded bg-[#DEFF9A]/10">{a.grupo_nivel}</span>
                       <span className="text-white/20 text-[8px]">{a.grupo_nombre}</span>
+                      {a.carrera && <span className="text-white/25 text-[7px] font-bold uppercase truncate max-w-[130px]">{a.carrera}</span>}
+                      {a.semestre && <span className="text-white/25 text-[7px] font-bold">{a.semestre}° Sem</span>}
                     </div>
                   </div>
                   <button

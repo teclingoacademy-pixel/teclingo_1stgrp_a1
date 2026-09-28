@@ -9,7 +9,7 @@
 
 import { readSpreadsheetValues, appendSpreadsheetRowDirect, hasWorkspaceToken } from './googleWorkspaceService';
 import { apiV1Engine } from './apiV1Service';
-import { SheetProgresoUsuarioRow, loadDatasheetFromStorage, saveDatasheetToStorage, getTextoBaseFromSheet } from '@/data/workbook/googleDatasheetA1';
+import type { SheetProgresoUsuarioRow } from '@/types/workbook/workbookRows';
 import {
   guardarProgresoUsuario,
   guardarResumenProgreso,
@@ -210,26 +210,8 @@ export const saveProgressToGoogleSheet = async (
 
   const fechaCompletado = progress.fecha_completado || new Date().toISOString();
 
-  // Guardar en la base de datos local y storage del cuaderno
+  // Guardar progreso en API (persiste en Prisma)
   try {
-    const newLocalRow: SheetProgresoUsuarioRow = {
-      progreso_id: `PRG_${Date.now()}_${progress.reactivo_id}`,
-      user_id: progress.user_id,
-      clase_id: progress.clase_id,
-      habilidad: progress.habilidad,
-      reactivo_id: progress.reactivo_id,
-      respuesta_usuario: progress.respuesta_usuario,
-      correcto: progress.correcto,
-      tiempo_respuesta_seg: progress.tiempo_respuesta_seg,
-      puntaje_obtenido: progress.puntaje_obtenido,
-      fecha_registro: fechaCompletado,
-    };
-
-    const currentData = loadDatasheetFromStorage();
-    currentData.progresoUsuario = currentData.progresoUsuario || [];
-    currentData.progresoUsuario.push(newLocalRow);
-    saveDatasheetToStorage(currentData);
-
     await apiV1Engine.postUserProgress(progress.user_id, {
       clase_id: progress.clase_id,
       habilidad: progress.habilidad,
@@ -240,7 +222,44 @@ export const saveProgressToGoogleSheet = async (
       puntaje_obtenido: progress.puntaje_obtenido,
     });
   } catch (localErr) {
-    console.warn('Aviso guardando progreso local:', localErr);
+    console.warn('Aviso guardando progreso:', localErr);
+  }
+
+  // NUEVO (2026-09-25): Guardar en Prisma vía /api/progress/submission
+  try {
+    // NUEVO: Resolver el email real (Prisma usa email, no user_id mangleado)
+    const resolvePrismaEmail = (): string => {
+      try {
+        const raw = localStorage.getItem('user');
+        if (raw) {
+          const u = JSON.parse(raw);
+          if (u && u.email) return String(u.email);
+        }
+      } catch {}
+      return progress.user_id;
+    };
+    const prismaEmail = resolvePrismaEmail();
+
+    const resp = await fetch('/api/progress/submission', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: prismaEmail,
+        lessonId: progress.clase_id,
+        exerciseId: progress.reactivo_id,
+        userAnswer: progress.respuesta_usuario,
+        isCorrect: progress.correcto,
+        timeSpentSec: progress.tiempo_respuesta_seg,
+        puntos: progress.puntaje_obtenido,
+      }),
+    });
+    if (resp.ok) {
+      console.log('[progress] Submission guardada en Prisma');
+    } else {
+      console.warn('[progress] Prisma respondió', resp.status);
+    }
+  } catch (e) {
+    console.warn('[progress] fetch a Prisma falló:', e);
   }
 
   // PASO 4.2: Si es usuario regular, escribir en el Data Lake
@@ -368,8 +387,38 @@ export const getTextoBaseFromGoogleSheet = async (
     console.warn('[nativeSheetService] Error al obtener texto base dinámico:', msg);
   }
 
-  // Fallback seguro a la definición local sincronizada
-  const local = getTextoBaseFromSheet(claseId);
-  return { success: !!local, texto: local };
+  // Fallback: consultar Prisma vía /api/v1/textos-base
+  try {
+    const res = await fetch(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}`);
+    if (res.ok) {
+      const json = await res.json();
+      if (json.success && json.data) {
+        const data = json.data;
+        return {
+          success: true,
+          texto: {
+            texto_id: `TXT_${claseId}`,
+            clase_id: claseId,
+            titulo_texto: String(data.titulo_texto || data.titulo || ''),
+            titulo: String(data.titulo || data.titulo_texto || ''),
+            contenido_texto: String(data.contenido_texto || data.contenido || ''),
+            contenido: String(data.contenido || data.contenido_texto || ''),
+            palabras_count: Number(data.word_count) || 0,
+            dificultad: Number(data.difficulty) || 1,
+            vocabulario_usado_json: '[]',
+            verbos_usados_json: '[]',
+            audio_tts_url: '',
+            tiempo_audio_seg: Number(data.estimated_sec) || 20,
+            tipo_texto: 'descriptivo',
+            activo: true,
+          },
+        };
+      }
+    }
+  } catch (e) {
+    console.warn('[nativeSheetService] Error fetching texto base desde API:', e);
+  }
+
+  return { success: false, texto: null };
 };
 

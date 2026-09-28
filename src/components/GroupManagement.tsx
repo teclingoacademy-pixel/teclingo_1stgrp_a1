@@ -159,19 +159,24 @@ export function GroupManagement({ onTakeAttendance }: { onTakeAttendance?: (grou
 
   const filteredGroups = useMemo(() => {
     if (currentRole === 'DIRECTOR') return groups;
-    return realGroups.map(g => ({
-      id: g.grupo_id,
-      name: `${g.nombre} — ${g.grupo}`,
-      level: g.nivel || 'A1',
-      teacherId: g.docente_email || '',
-      studentIds: (realMembers[g.grupo_id] || []).map(m => m.user_id),
-      schedule: g.horario || '',
-      time: g.horario || '',
-      days: (g.dias || '').split(',').map(d => d.trim()),
-      status: (g.status || 'ACTIVE') as 'ACTIVE',
-      room: '',
-      type: 'PRESENCIAL' as const,
-    }));
+    return realGroups.map(g => {
+      const sesiones = g.sesiones || [];
+      const schedule = sesiones.map(s => `${s.horaInicio}-${s.horaFin}`).join('; ');
+      const days = sesiones.flatMap(s => s.dias.split(',').map(d => d.trim()));
+      return {
+        id: g.grupo_id,
+        name: `${g.nombre} — ${g.grupo}`,
+        level: g.nivel || 'A1',
+        teacherId: g.docente_email || '',
+        studentIds: (realMembers[g.grupo_id] || []).map(m => m.user_id),
+        schedule,
+        time: schedule,
+        days,
+        status: (g.status || 'ACTIVE') as 'ACTIVE',
+        room: '',
+        type: 'PRESENCIAL' as const,
+      };
+    });
   }, [currentRole, groups, realGroups, realMembers]);
 
   const activeGroup = useMemo(() => {

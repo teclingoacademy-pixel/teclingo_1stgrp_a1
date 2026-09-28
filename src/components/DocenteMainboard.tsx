@@ -55,11 +55,11 @@ import { TeacherSchedules } from './TeacherSchedules';
 import { MasterSwitcher, UserRole } from './MasterSwitcher';
 import { MessagingModule } from './MessagingModule';
 import { AttendanceModule } from './AttendanceModule';
-import { TeacherAttendance } from './TeacherAttendance';
+import { WhatsAppButton, WHATSAPP_TEACHER_MESSAGE } from './WhatsAppButton';
+import { DocenteAsistenciasOverview } from './DocenteAsistenciasOverview';
 import { StudentAcademicActivity } from './StudentAcademicActivity';
 import { QRScannerModule } from './QRScannerModule';
 import { useAppContext } from '../context/AppContext';
-import { SafeZoneTeacherAnalytics } from './SafeZoneTeacherAnalytics';
 import { GruposInglesDocente } from './GruposInglesDocente';
 import { QuickChat } from './QuickChat';
 import { MessageNotificationBell } from './MessageNotificationBell';
@@ -149,11 +149,11 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
             photo: `https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150&h=150&fit=crop`
           }));
           
-          // Parse schedule from horario field (format: "HH:MM-HH:MM" or "HH:MM - HH:MM")
-          const horarioRaw = g.horario || '';
-          const timeMatch = horarioRaw.match(/(\d{1,2}:\d{2})\s*[-–]\s*(\d{1,2}:\d{2})/);
-          const timeStart = timeMatch ? timeMatch[1] : '08:00';
-          const timeEnd = timeMatch ? timeMatch[2] : '09:40';
+          // Parse schedule from sesiones
+          const sesiones = g.sesiones || [];
+          const firstSession = sesiones[0];
+          const timeStart = firstSession?.horaInicio || '08:00';
+          const timeEnd = firstSession?.horaFin || '09:40';
           
           mappedGroups.push({
             id: g.code_id || g.grupo_id,
@@ -279,7 +279,6 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
     { id: 'disponibilidad', label: 'Asesorías / Slots', icon: Clock, badge: 'SYNC', category: 'Operaciones' },
     { id: 'folios', label: 'Folios', icon: FileText, category: 'Operaciones' },
 
-    { id: 'safe-zone', label: '🛡️ Auditoría SafeZone', icon: Shield, badge: 'CONV', category: 'Monitoreo & Innovación', isPrincipal: true },
     { id: 'evidencias', label: 'Evidencias', icon: Camera, category: 'Monitoreo & Innovación' },
     { id: 'evidencias-recibidas', label: 'Evidencias Recibidas', icon: Image, badge: 'GRUPOS', category: 'Monitoreo & Innovación' },
     { id: 'reconocimiento', label: 'Reconocimiento / Muro', icon: Award, category: 'Monitoreo & Innovación' },
@@ -357,6 +356,13 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
                         <h1 className="text-3xl md:text-4xl font-black text-white bevel-text uppercase tracking-tight">Clase del Día</h1>
                     </div>
                     <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+                        <WhatsAppButton
+                          label="Teacher Online"
+                          sublabel="WhatsApp 8461108789"
+                          message={WHATSAPP_TEACHER_MESSAGE}
+                          iconSize={16}
+                          className="px-5 py-3.5"
+                        />
                         {globalEvents.some(e => e.visibility.includes('GLOBAL') || e.visibility.includes('DOCENTE')) && (
                           <div className="px-6 py-3 rounded-2xl bg-[#4ADE80]/10 border border-[#4ADE80]/20 flex items-center gap-4 hidden xl:flex">
                              <Calendar size={16} className="text-[#4ADE80]" />
@@ -744,7 +750,7 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
               ) : currentView === 'calificaciones' ? (
                 <TeacherGrades />
               ) : currentView === 'asistencias' ? (
-                <TeacherAttendance />
+                <DocenteAsistenciasOverview onRegisterAttendance={(grupoId) => setSelectedGroupForAttendance(grupoId)} />
               ) : currentView === 'mensajes' ? (
                 <MessagingModule initialChatId={targetChatId || undefined} />
               ) : currentView === 'calendario' ? (
@@ -755,8 +761,6 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
                 <PlanningModule />
               ) : currentView === 'libro-maestro' ? (
                 <LibroVirtual role="docente" lessonId="N1-C01" />
-              ) : currentView === 'safe-zone' ? (
-                <SafeZoneTeacherAnalytics />
               ) : currentView === 'evidencias' ? (
                 <EvidenceModule />
               ) : currentView === 'evidencias-recibidas' ? (
@@ -784,6 +788,7 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
       <AnimatePresence>
         {isScanning && (
           <QRScannerModule 
+            grupoId={activeGroup?.grupo_id || groups[currentGroupIdx]?.grupo_id || ""}
             onClose={() => setIsScanning(false)}
             onScanSuccess={(data) => {
               // Extract student ID from code e.g. ROD-PANC-26-03 or STU-2026-003

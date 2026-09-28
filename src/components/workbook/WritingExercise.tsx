@@ -1,23 +1,70 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
-import { Volume2, VolumeX, CheckCircle2, AlertCircle, XCircle, Send } from 'lucide-react';
+import { Volume2, VolumeX, CheckCircle2, AlertCircle, XCircle, Send, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
 import { playAudio, stopAudio, isValidEnglishForTTS } from '@/services/workbook/ttsService';
 import { stopSpeech } from '@/utils/workbook/audioFeedback';
+
+/**
+ * Normaliza una cadena para comparar respuestas de forma tolerante.
+ * - trim + lowercase
+ * - apóstrofes tipográficos → rectos
+ * - comillas tipográficas → rectas
+ * - quita puntuación final (. , ! ? ; :)
+ * - colapsa espacios múltiples
+ */
+const normalizeForCompare = (s: string): string =>
+  (s || '')
+    .trim()
+    .toLowerCase()
+    .replace(/[\u2018\u2019\u02BC\u2032`\u00B4]/g, "'")
+    .replace(/[\u201C\u201D]/g, '"')
+    .replace(/[.,!?;:]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 
 export interface WritingExerciseProps {
   reactivo: any;
   onAnswer: (result: { respuesta: string; correcto: boolean; tipo?: string }) => void;
   validationState?: 'unanswered' | 'first_fail' | 'second_fail' | 'correct';
+  textoBase?: {
+    titulo_texto?: string;
+    contenido_texto?: string;
+    titulo?: string;
+    contenido?: string;
+    [key: string]: any;
+  } | null;
+}
+
+/**
+ * Divide el texto en 3 partes: antes, match (frase ancla), despues.
+ * Case-insensitive, tolera puntuacion final. Si no encuentra, match=null.
+ */
+function splitByAnchor(fullText: string, anchor: string): { before: string; match: string | null; after: string } {
+  if (!fullText || !anchor) return { before: fullText, match: null, after: '' };
+  const cleanAnchor = anchor.replace(/[.,!?;:]+$/g, '').trim();
+  if (!cleanAnchor) return { before: fullText, match: null, after: '' };
+  const idx = fullText.toLowerCase().indexOf(cleanAnchor.toLowerCase());
+  if (idx < 0) return { before: fullText, match: null, after: '' };
+  return {
+    before: fullText.slice(0, idx),
+    match: fullText.slice(idx, idx + cleanAnchor.length),
+    after: fullText.slice(idx + cleanAnchor.length),
+  };
 }
 
 export const WritingExercise: React.FC<WritingExerciseProps> = ({
   reactivo,
   onAnswer,
   validationState = 'unanswered',
+  textoBase: textoBaseProp,
 }) => {
   const [inputText, setInputText] = useState<string>('');
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
   const [submittedAnswer, setSubmittedAnswer] = useState<string>('');
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const [showTextBase, setShowTextBase] = useState<boolean>(false);
+  const [textoBaseLocal, setTextoBaseLocal] = useState<any | null>(textoBaseProp || null);
+  const [loadingTextBase, setLoadingTextBase] = useState<boolean>(false);
+  const [textBaseError, setTextBaseError] = useState<string | null>(null);
 
   // Respuesta esperada en inglés para el TTS y evaluación
   const englishTarget = useMemo(() => {
@@ -27,6 +74,55 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
     if (isValidEnglishForTTS(trans)) return trans;
     return ans;
   }, [reactivo.respuesta_correcta, reactivo.frase_traduccion]);
+
+  // Cargar TextBase de la lección (props o fetch). Cachea en sessionStorage.
+  useEffect(() => {
+    const claseId = reactivo?.clase_id || reactivo?.claseId || '';
+    if (!claseId) { setTextoBaseLocal(null); return; }
+
+    // Prioridad 1: prop del padre
+    if (textoBaseProp && (textoBaseProp.contenido_texto || textoBaseProp.contenido)) {
+      setTextoBaseLocal(textoBaseProp);
+      return;
+    }
+
+    // Prioridad 2: sessionStorage cache
+    const cacheKey = 'textbase_' + claseId;
+    try {
+      const cached = sessionStorage.getItem(cacheKey);
+      if (cached) {
+        setTextoBaseLocal(JSON.parse(cached));
+        return;
+      }
+    } catch {}
+
+    // Prioridad 3: fetch
+    let cancelled = false;
+    setLoadingTextBase(true);
+    setTextBaseError(null);
+    fetch('/api/v1/textos-base?clase_id=' + encodeURIComponent(claseId))
+      .then((r) => r.json())
+      .then((json) => {
+        if (cancelled) return;
+        const payload = json && (json.data || json.texto);
+        if (payload && (payload.contenido_texto || payload.contenido)) {
+          setTextoBaseLocal(payload);
+          try { sessionStorage.setItem(cacheKey, JSON.stringify(payload)); } catch {}
+        } else {
+          setTextoBaseLocal(null);
+          setTextBaseError('Texto de referencia no disponible para esta lección.');
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setTextoBaseLocal(null);
+          setTextBaseError('No se pudo cargar el texto de referencia.');
+        }
+      })
+      .finally(() => { if (!cancelled) setLoadingTextBase(false); });
+
+    return () => { cancelled = true; };
+  }, [reactivo?.clase_id, reactivo?.claseId, textoBaseProp]);
 
   // Al cambiar de reactivo, reiniciar estados locales y enfocar el input
   // CRÍTICO: Sin Autoplay - NO reproducir audio automáticamente
@@ -69,7 +165,7 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
     }
 
     setIsPlayingAudio(true);
-    playAudio(englishTarget, {
+    playAudio(englishTarget, { forceLang: 'en-US',
       onStart: () => setIsPlayingAudio(true),
       onEnd: () => setIsPlayingAudio(false),
       onError: () => setIsPlayingAudio(false),
@@ -88,11 +184,18 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
 
     setSubmittedAnswer(trimmedInput);
 
-    // Comparación tolerante: ignorar mayúsculas, minúsculas y espacios extra (.trim().toLowerCase())
-    const normalizedUser = trimmedInput.toLowerCase().replace(/\s+/g, ' ');
-    const normalizedCorrect = (reactivo.respuesta_correcta || '').trim().toLowerCase().replace(/\s+/g, ' ');
+    // Comparación tolerante: normaliza mayúsculas, espacios, apóstrofes y puntuación final.
+    // Además, considera TODAS las respuestas aceptadas (acceptedAnswers) y la respuesta canónica.
+    const normalizedUser = normalizeForCompare(trimmedInput);
 
-    const isMatch = normalizedUser === normalizedCorrect;
+    const rawCandidates: string[] = [
+      reactivo.respuesta_correcta,
+      ...(Array.isArray(reactivo.acceptedAnswers) ? reactivo.acceptedAnswers : []),
+      ...(Array.isArray(reactivo.accepted_answers) ? reactivo.accepted_answers : []),
+    ].filter((x): x is string => typeof x === 'string' && x.length > 0);
+
+    const normalizedCandidates = rawCandidates.map(normalizeForCompare).filter(Boolean);
+    const isMatch = normalizedCandidates.includes(normalizedUser);
 
     onAnswer({
       respuesta: trimmedInput,
@@ -103,6 +206,13 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
 
   const isResolved = validationState === 'correct' || validationState === 'second_fail';
 
+  // NUEVO (2026-09-25): Detecta el idioma del enunciado para el label dinámico.
+  const promptLang: 'es' | 'en' = React.useMemo(() => {
+    const q = (reactivo.pregunta_texto || '').trim();
+    // REGLA BINARIA: comillas "..." = ingles. Sin comillas = espanol.
+    return /^[""].*[""]$/.test(q) ? 'en' : 'es';
+  }, [reactivo.pregunta_texto]);
+
   return (
     <div
       className="w-full bg-white rounded-2xl border border-slate-200/90 p-5 sm:p-7 shadow-sm space-y-5 text-left"
@@ -111,7 +221,7 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
       {/* 1. ENUNCIADO / PROMPT EN ESPAÑOL */}
       <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-5 sm:p-6 text-center shadow-xs">
         <span className="text-[11px] uppercase tracking-wider font-bold text-slate-500 block mb-1 font-mono">
-          Enunciado en Español:
+          Enunciado en {promptLang === 'es' ? 'Español' : 'Inglés'}:
         </span>
         <div className="text-xl sm:text-2xl font-bold text-slate-900 leading-snug font-sans">
           {reactivo.pregunta_texto}
@@ -121,6 +231,17 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
             {reactivo.contexto_espanol}
           </p>
         )}
+        <div className="mt-3 flex justify-center">
+          <button
+            type="button"
+            onClick={() => playAudio((reactivo.pregunta_texto || '').replace(/^[""]|[""]$/g, ''), { forceLang: promptLang === 'en' ? 'en-US' : 'es-MX' })}
+            className="px-3.5 py-1.5 rounded-lg bg-slate-200 hover:bg-slate-300 text-slate-800 text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer active:scale-95"
+            title={promptLang === 'en' ? 'Escuchar enunciado en inglés' : 'Escuchar enunciado en español'}
+          >
+            <Volume2 className="w-3.5 h-3.5" />
+            <span>Escuchar enunciado</span>
+          </button>
+        </div>
       </div>
 
       {/* 2. BOTÓN DE AUDIO TTS (PISTA DE PRONUNCIACIÓN EN INGLÉS) */}
@@ -160,6 +281,77 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
           )}
         </button>
       </div>
+
+      {/* 2.5 PANEL "VER TEXTO DE REFERENCIA" (NUEVO 2026-09-27) */}
+      {(textoBaseLocal || loadingTextBase || textBaseError) && (
+        <div className="rounded-2xl border border-indigo-200 bg-indigo-50/50 overflow-hidden">
+          <button
+            type="button"
+            onClick={() => setShowTextBase((v) => !v)}
+            className="w-full flex items-center justify-between gap-3 px-4 sm:px-5 py-3 hover:bg-indigo-100/60 transition-colors cursor-pointer"
+            aria-expanded={showTextBase}
+          >
+            <div className="flex items-center gap-2.5 text-left">
+              <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
+              <div>
+                <span className="text-xs sm:text-sm font-bold text-indigo-900 block">
+                  Ver texto de referencia
+                </span>
+                <span className="text-[11px] text-indigo-700/80 block">
+                  Consulta la frase del texto modelo si necesitas apoyo
+                </span>
+              </div>
+            </div>
+            {showTextBase ? (
+              <ChevronUp className="w-4 h-4 text-indigo-600 shrink-0" />
+            ) : (
+              <ChevronDown className="w-4 h-4 text-indigo-600 shrink-0" />
+            )}
+          </button>
+
+          {showTextBase && (
+            <div className="border-t border-indigo-200 bg-white p-4 sm:p-5 space-y-3">
+              {loadingTextBase && (
+                <p className="text-xs text-slate-500 italic">Cargando texto...</p>
+              )}
+
+              {textBaseError && !loadingTextBase && (
+                <p className="text-xs text-rose-600 italic">{textBaseError}</p>
+              )}
+
+              {textoBaseLocal && !loadingTextBase && (() => {
+                const fullText = textoBaseLocal.contenido_texto || textoBaseLocal.contenido || '';
+                const titulo = textoBaseLocal.titulo_texto || textoBaseLocal.titulo || 'Texto modelo';
+
+                return (
+                  <>
+                    <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500 font-bold">
+                        {titulo}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => playAudio(fullText, { forceLang: 'en-US' })}
+                        className="text-[11px] px-2.5 py-1 rounded-md bg-indigo-100 hover:bg-indigo-200 text-indigo-800 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                        title="Escuchar el texto completo en inglés"
+                      >
+                        <Volume2 className="w-3 h-3" />
+                        <span>Escuchar texto</span>
+                      </button>
+                    </div>
+                    <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-line">
+                      {fullText}
+                    </p>
+                    <p className="text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-100 rounded-md px-2.5 py-1.5 italic">
+                      💡 Lee el texto completo y busca la frase que responde al enunciado.
+                    </p>
+                  </>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* 3. CAMPO DE TEXTO (INPUT) Y BOTÓN DE COMPROBAR */}
       <form onSubmit={handleSubmit} className="space-y-3" id="form-writing-input">

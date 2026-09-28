@@ -26,7 +26,7 @@ import {
   saveDatasheetToStorage,
   INITIAL_RESUMEN_PROGRESO,
   INITIAL_CLASES,
-} from '@/data/workbook/googleDatasheetA1';
+} from '@/data/legacy/workbookData';
 import {
   readSpreadsheetValues,
   hasWorkspaceToken,
@@ -427,3 +427,31 @@ export async function syncUserXpTotalToGoogleSheet(
   return { success: true };
 }
 
+
+/**
+ * NUEVO (2026-09-25): Trae el resumen de progreso desde Prisma vía endpoint
+ * y lo guarda en el storage local para que getResumenProgresoForUser lo use.
+ */
+export async function hydrateResumenProgresoFromPrisma(userId: string): Promise<void> {
+  try {
+    const resp = await fetch(`/api/progress/${encodeURIComponent(userId)}`);
+    if (!resp.ok) return;
+    const json = await resp.json();
+    if (!json.ok || !json.data?.resumen) return;
+
+    const state = loadDatasheetFromStorage();
+    const existing = state.resumenProgreso || [];
+    const fromPrisma = json.data.resumen as any[];
+
+    // Fusionar: priorizar datos de Prisma
+    const map = new Map<string, any>();
+    existing.forEach((r: any) => map.set(`${r.user_id}|${r.clase_id}`, r));
+    fromPrisma.forEach((r: any) => map.set(`${r.user_id}|${r.clase_id}`, r));
+
+    state.resumenProgreso = Array.from(map.values());
+    saveDatasheetToStorage(state);
+    console.log(`[resumenProgreso] Hidratado desde Prisma: ${fromPrisma.length} filas`);
+  } catch (e) {
+    console.warn('[resumenProgreso] No se pudo hidratar desde Prisma:', e);
+  }
+}

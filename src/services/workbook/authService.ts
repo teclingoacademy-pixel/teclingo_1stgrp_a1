@@ -14,7 +14,7 @@ import {
   checkUserExistsInSheet, 
   registerUserInGoogleSheet 
 } from './nativeSheetService';
-import { loadDatasheetFromStorage, saveDatasheetToStorage } from '@/data/workbook/googleDatasheetA1';
+
 
 export const DEMO_USER: User = {
   user_id: 'demo_user_001',
@@ -258,19 +258,11 @@ export const signOutUser = async (): Promise<void> => {
   }
 
   if (isDemo) {
-    // Regla DEMO: El progreso NO se guarda permanentemente. Al cerrar sesión se limpia.
-    try {
-      const state = loadDatasheetFromStorage();
-      if (state.progresoUsuario) {
-        state.progresoUsuario = state.progresoUsuario.filter((p) => p.user_id !== 'demo_user_001');
-      }
-      if (state.resumenProgreso) {
-        state.resumenProgreso = state.resumenProgreso.filter((r) => r.user_id !== 'demo_user_001');
-      }
-      saveDatasheetToStorage(state);
-    } catch (e) {
-      console.warn('Error resetting demo progress on logout', e);
-    }
+    // TODO 2026-09-26: Reset demo de progresión real via API cuando aplique.
+    // Ej: await fetch('/api/users/demo/reset', { method: 'POST' });
+    // El progreso real vive en Prisma (Submission + UserProgress),
+    // no en localStorage. El reset anterior (datasheet) fue eliminado.
+    console.log('[authService] Demo logout — reset real pendiente de endpoint');
   }
 
   localStorage.removeItem('user');

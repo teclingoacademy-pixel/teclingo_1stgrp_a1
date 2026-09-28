@@ -193,7 +193,7 @@ export const WritingDragDrop: React.FC<WritingProps> = ({ reactivo, onAnswer, va
         {englishAudioText && (
           <button
             type="button"
-            onClick={() => playAudio(englishAudioText)}
+            onClick={() => playAudio(englishAudioText, { forceLang: 'en-US' })}
             title="Escuchar pronunciación del objetivo en inglés"
             aria-label="Escuchar objetivo en inglés"
             className="p-2 rounded-full bg-blue-100 hover:bg-blue-200 text-blue-700 transition-colors shrink-0 cursor-pointer shadow-xs"
@@ -351,7 +351,7 @@ export const WritingDragDrop: React.FC<WritingProps> = ({ reactivo, onAnswer, va
             {englishAudioText && (
               <button
                 type="button"
-                onClick={() => playAudio(englishAudioText)}
+                onClick={() => playAudio(englishAudioText, { forceLang: 'en-US' })}
                 className="text-xs bg-white/80 hover:bg-white border border-current px-2 py-1 rounded-md flex items-center gap-1 cursor-pointer"
               >
                 <Volume2 className="w-3.5 h-3.5" />

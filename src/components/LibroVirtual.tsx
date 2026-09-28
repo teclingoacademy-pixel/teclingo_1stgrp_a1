@@ -13,7 +13,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useAppContext } from '../context/AppContext';
 import { ClassIndexScreen } from './workbook/ClassIndexScreen';
 import { ClassDetailScreen } from './workbook/ClassDetailScreen';
-import { SheetProgresoUsuarioRow } from '../data/workbook/googleDatasheetA1';
+import type { SheetProgresoUsuarioRow } from '../types/workbook/workbookRows';
 
 // ==========================================
 // INTERFACES

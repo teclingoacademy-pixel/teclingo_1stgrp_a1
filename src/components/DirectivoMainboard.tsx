@@ -65,10 +65,14 @@ import { LibroVirtual } from './LibroVirtual';
 import { AccessControlModule } from './AccessControlModule';
 import { AsistenciasMaster } from './AsistenciasMaster';
 import { ProfileOnboardingModal, isProfileComplete } from './ProfileOnboardingModal';
-import { obtenerPerfilCompleto } from '../services/identityService';
+import { obtenerPerfilCompleto, obtenerCredencial } from '../services/identityService';
 import { fetchCalendarEvents, CalendarEvent } from '../services/calendarService';
+import { downloadCredentialCardPdf, shareCredentialCardPdf, CredentialCardData, CredentialRole } from '../services/credentialPdfService';
+import { Download, Share2 } from 'lucide-react';
 
 import { TeachersMaster } from './TeachersMaster';
+import { CredentialPreviewCard } from './CredentialPreviewCard';
+import { WhatsAppButton, WHATSAPP_TEACHER_MESSAGE } from './WhatsAppButton';
 
 const MONTH_NAMES_ES = ['ENE','FEB','MAR','ABR','MAY','JUN','JUL','AGO','SEP','OCT','NOV','DIC'];
 
@@ -103,6 +107,7 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [directorProfileData, setDirectorProfileData] = useState<Record<string, unknown>>({});
   const [institutionCode, setInstitutionCode] = useState<string>('');
+  const [credentialData, setCredentialData] = useState<Record<string, unknown> | null>(null);
   const [nextEvent, setNextEvent] = useState<CalendarEvent | null>(null);
 
   // Cargar perfil del director para verificar si está completo
@@ -127,7 +132,22 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
       }
     };
     loadProfile();
+
+    // Cargar credencial DINER desde PostgreSQL
+    const loadCredential = async () => {
+      if (!userEmail) return;
+      try {
+        const cred = await obtenerCredencial(userEmail);
+        if (cred) setCredentialData(cred);
+      } catch (err) {
+        console.warn('[DirectivoMainboard] Error loading credential:', err);
+      }
+    };
+    loadCredential();
   }, [userEmail]);
+
+  // REGLA UNIVERSAL — grupo de la credencial con tipado seguro (evita 'unknown' en JSX)
+  const credGrupo = (credentialData?.grupo ?? null) as { nombre?: string; grupo?: string; nivel?: string } | null;
 
   // Cargar eventos reales del calendario y calcular el próximo evento
   useEffect(() => {
@@ -309,7 +329,14 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
                          ESTADO <span className="text-[#DEFF9A]">OPERATIVO</span>
                       </h1>
                     </div>
-                    <div className="flex items-center gap-4 w-full md:w-auto">
+<div className="flex items-center gap-4 w-full md:w-auto">
+                        <WhatsAppButton
+                          label="Teacher Online"
+                          sublabel="WhatsApp 8461108789"
+                          message={WHATSAPP_TEACHER_MESSAGE}
+                          iconSize={16}
+                          className="px-5 py-3"
+                        />
                         {nextEvent && (
                           <div className="px-6 py-3 rounded-2xl bg-[#DEFF9A]/10 border border-[#DEFF9A]/20 flex items-center gap-4 hidden xl:flex">
                              <Calendar size={16} className="text-[#DEFF9A]" />
@@ -382,8 +409,101 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
                               </div>
                            </div>
                         </div>
-                     </div>
-                   )}
+                      </div>
+                    )}
+
+                   {/* CARD: CREDENCIAL INSTITUCIONAL — Vista previa sincronizada con el PDF */}
+{credentialData && (
+  <div className="flex flex-col items-center gap-6 py-6">
+    <CredentialPreviewCard
+      data={{
+        name: credentialData.name as string,
+        role: currentRole as 'ALUMNO' | 'DOCENTE' | 'DIRECTOR',
+        roleLabel: credentialData.roleLabel as string,
+        institutionName: credentialData.institutionName as string,
+        institutionLogo: credentialData.institutionLogo as string,
+        institutionCode: credentialData.institutionCode as string,
+        controlLabel: credentialData.controlLabel as string,
+        controlValue: credentialData.controlValue as string,
+        nivel: credentialData.nivel as string,
+        grupo: credentialData.grupo as any,
+        modalidad: credentialData.modalidad as string,
+        career: credentialData.career as string,
+        semestre: credentialData.semestre as string,
+        modulo: credentialData.modulo as string,
+        avatar: credentialData.avatar as string,
+        slogan: credentialData.slogan as string,
+        verified: credentialData.verified as boolean,
+        chips: credentialData.chips as string[],
+        userId: credentialData.userId as string,
+      }}
+    />
+
+    <div className="flex flex-col sm:flex-row gap-3 w-full max-w-sm">
+      <button
+        onClick={async () => {
+          const cd: CredentialCardData = {
+            name: (credentialData.name as string) || '',
+            role: currentRole === 'DIRECTOR' ? 'DIRECTOR' : currentRole === 'ALUMNO' ? 'ALUMNO' : 'DOCENTE',
+            roleLabel: credentialData.roleLabel as string,
+            email: credentialData.email as string,
+            curp: credentialData.curp as string,
+            controlLabel: (credentialData.controlLabel as string) || undefined,
+            controlValue: credentialData.controlValue as string,
+            nivel: credentialData.nivel as string,
+            grupo: credentialData.grupo as string,
+            career: credentialData.career as string,
+            semestre: credentialData.semestre as string,
+            modalidad: credentialData.modalidad as string,
+            institutionName: credentialData.institutionName as string,
+            institutionCode: credentialData.institutionCode as string,
+            institutionLogoUrl: credentialData.institutionLogo as string,
+            avatarUrl: credentialData.avatar as string,
+            slogan: credentialData.slogan as string,
+            userId: credentialData.userId as string,
+          };
+          await downloadCredentialCardPdf(cd);
+        }}
+        className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-white/5 border border-white/10 rounded-2xl text-[10px] font-black uppercase tracking-widest text-white hover:bg-white/10 transition-all"
+      >
+        <Download size={14} /> Descargar PDF
+      </button>
+      <button
+        onClick={async () => {
+          const cd: CredentialCardData = {
+            name: (credentialData.name as string) || '',
+            role: currentRole === 'DIRECTOR' ? 'DIRECTOR' : currentRole === 'ALUMNO' ? 'ALUMNO' : 'DOCENTE',
+            roleLabel: credentialData.roleLabel as string,
+            email: credentialData.email as string,
+            curp: credentialData.curp as string,
+            controlLabel: (credentialData.controlLabel as string) || undefined,
+            controlValue: credentialData.controlValue as string,
+            nivel: credentialData.nivel as string,
+            grupo: credentialData.grupo as string,
+            career: credentialData.career as string,
+            semestre: credentialData.semestre as string,
+            modalidad: credentialData.modalidad as string,
+            institutionName: credentialData.institutionName as string,
+            institutionCode: credentialData.institutionCode as string,
+            institutionLogoUrl: credentialData.institutionLogo as string,
+            avatarUrl: credentialData.avatar as string,
+            slogan: credentialData.slogan as string,
+            userId: credentialData.userId as string,
+          };
+          await shareCredentialCardPdf(cd);
+        }}
+        className="flex-1 flex items-center justify-center gap-2 px-6 py-3.5 bg-[#DEFF9A] rounded-2xl text-[10px] font-black uppercase tracking-widest text-[#061a1a] shadow-[0_10px_30px_rgba(222,255,154,0.4)] hover:scale-105 transition-all"
+      >
+        <Share2 size={14} /> Compartir
+      </button>
+    </div>
+
+    <p className="text-center text-white/30 text-[10px] font-medium italic max-w-sm leading-relaxed">
+      Esta tarjeta sirve como tu identificación oficial ante alumnos de nuevo ingreso y pares académicos.
+    </p>
+  </div>
+)}
+
 
                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                      {quickStats.map((stat, i) => (
@@ -495,3 +615,4 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
     </div>
   );
 }
+

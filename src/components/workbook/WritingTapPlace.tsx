@@ -87,7 +87,7 @@ export const WritingTapPlace: React.FC<WritingProps> = ({ reactivo, onAnswer, va
         {englishAudioText && (
           <button
             type="button"
-            onClick={() => playAudio(englishAudioText)}
+            onClick={() => playAudio(englishAudioText, { forceLang: 'en-US' })}
             title="Escuchar pronunciación del objetivo en inglés"
             aria-label="Escuchar objetivo en inglés"
             className="p-2 rounded-full bg-indigo-100 hover:bg-indigo-200 text-indigo-700 transition-colors shrink-0 cursor-pointer shadow-xs"
@@ -223,7 +223,7 @@ export const WritingTapPlace: React.FC<WritingProps> = ({ reactivo, onAnswer, va
             {englishAudioText && (
               <button
                 type="button"
-                onClick={() => playAudio(englishAudioText)}
+                onClick={() => playAudio(englishAudioText, { forceLang: 'en-US' })}
                 className="text-xs bg-white/80 hover:bg-white border border-current px-2.5 py-1 rounded-md flex items-center gap-1 cursor-pointer"
               >
                 <Volume2 className="w-3.5 h-3.5" />

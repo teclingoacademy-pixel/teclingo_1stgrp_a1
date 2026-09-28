@@ -9,6 +9,9 @@
 
 import { API_BASE } from './apiConfig';
 
+const LOCAL_API_URL =
+  (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000';
+
 /** Identity API (Data Lake) — las acciones del Calendario Institucional viven en
  * el mismo Apps Script de identidad del ecosistema (Code.gs), igual que el resto
  * de los datos del Data Lake. */
@@ -72,21 +75,10 @@ function getUserEmail(): string {
   return '';
 }
 
-/** POST anti-CORS al Apps Script de identidad (mismo patrón que identityService.ts). */
+/** Google Sheets DESHABILITADO — mock response */
 async function postAlCalendario(payload: Record<string, unknown>, timeoutMs = 12000): Promise<any> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const resp = await fetch(IDENTITY_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    return await resp.json();
-  } finally {
-    clearTimeout(timer);
-  }
+  console.log(`[Calendar MOCK] action=${payload.action} — datos van a PostgreSQL`);
+  return { ok: true, eventos: [] };
 }
 
 /* ================================================================
@@ -102,14 +94,12 @@ export async function fetchCalendarEvents(
   month?: number
 ): Promise<CalendarEvent[]> {
   try {
-    const res = await postAlCalendario({
-      action: 'obtenerEventosCalendario',
-      year: year || undefined,
-      month: month || undefined,
-    });
-
+    const params = new URLSearchParams();
+    const email = getUserEmail();
+    const resp = await fetch(`${LOCAL_API_URL}/api/calendar-events?email=${encodeURIComponent(email)}`);
+    const res = await resp.json();
     if (!res?.ok) throw new Error(res?.error || 'Error al obtener eventos');
-    return (res.events || []).map((row: any) => {
+    let events = (res.events || []).map((row: any) => {
       const rawVis = Array.isArray(row.visibility)
         ? row.visibility.join(',')
         : (row.visibility || 'GLOBAL');
@@ -126,12 +116,13 @@ export async function fetchCalendarEvents(
         createdBy: row.created_by || '',
         createdAt: row.created_at || new Date().toISOString(),
         updatedAt: row.updated_at,
-        googleCalendarEventId: row.google_calendar_event_id || undefined,
+        googleCalendarEventId: undefined,
       };
     });
+    if (year && month) events = events.filter((e: CalendarEvent) => e.year === year && e.month === month);
+    return events;
   } catch (err) {
     console.error('[calendarService] fetchCalendarEvents error:', err);
-    // Fallback: leer del localStorage si el Data Lake no responde
     const fallback = localStorage.getItem('tecnolingo_calendar_fallback');
     if (fallback) {
       const events = JSON.parse(fallback) as CalendarEvent[];
@@ -159,11 +150,11 @@ export async function createCalendarEvent(
   };
 
   try {
-    const res = await postAlCalendario({
-      action: 'crearEventoCalendario',
-      email,
-      event: {
-        id: newEvent.id,
+    const resp = await fetch(`${LOCAL_API_URL}/api/calendar-events`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email: newEvent.createdBy,
         day: newEvent.day,
         month: newEvent.month,
         year: newEvent.year,
@@ -171,25 +162,18 @@ export async function createCalendarEvent(
         type: newEvent.type,
         description: newEvent.description || '',
         time: newEvent.time || '',
-        visibility: newEvent.visibility,
-        created_by: newEvent.createdBy,
-        created_at: newEvent.createdAt,
-        updated_at: newEvent.createdAt,
-        google_calendar_event_id: newEvent.googleCalendarEventId || '',
-      },
+        visibility: Array.isArray(newEvent.visibility) ? newEvent.visibility.join(',') : newEvent.visibility,
+      }),
     });
-
+    const res = await resp.json();
     if (!res?.ok) throw new Error(res?.error || 'Error al crear evento');
 
-    // Guardar fallback en localStorage
     const existing = JSON.parse(localStorage.getItem('tecnolingo_calendar_fallback') || '[]');
     existing.push(newEvent);
     localStorage.setItem('tecnolingo_calendar_fallback', JSON.stringify(existing));
-
     return newEvent;
   } catch (err) {
     console.error('[calendarService] createCalendarEvent error:', err);
-    // Fallback: guardar solo en localStorage
     const existing = JSON.parse(localStorage.getItem('tecnolingo_calendar_fallback') || '[]');
     existing.push(newEvent);
     localStorage.setItem('tecnolingo_calendar_fallback', JSON.stringify(existing));
@@ -205,24 +189,18 @@ export async function updateCalendarEvent(
   updates: Partial<Omit<CalendarEvent, 'id' | 'createdBy' | 'createdAt'>>
 ): Promise<CalendarEvent | null> {
   try {
-    const res = await postAlCalendario({
-      action: 'actualizarEventoCalendario',
-      email: getUserEmail(),
-      event_id: id,
-      campos: (() => {
-        const { googleCalendarEventId, visibility, ...rest } = updates;
-        return {
-          ...rest,
-          ...(googleCalendarEventId !== undefined ? { google_calendar_event_id: googleCalendarEventId } : {}),
-          visibility: Array.isArray(visibility) ? visibility.join(',') : visibility,
-          updated_at: new Date().toISOString(),
-        };
-      })(),
+    const updateData: Record<string, unknown> = { ...updates, email: getUserEmail() };
+    if (Array.isArray(updateData.visibility)) {
+      updateData.visibility = updateData.visibility.join(',');
+    }
+    const resp = await fetch(`${LOCAL_API_URL}/api/calendar-events/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updateData),
     });
-
+    const res = await resp.json();
     if (!res?.ok) throw new Error(res?.error || 'Error al actualizar evento');
 
-    // Actualizar fallback
     const existing = JSON.parse(localStorage.getItem('tecnolingo_calendar_fallback') || '[]');
     const idx = existing.findIndex((e: CalendarEvent) => e.id === id);
     if (idx !== -1) {
@@ -233,7 +211,6 @@ export async function updateCalendarEvent(
     return null;
   } catch (err) {
     console.error('[calendarService] updateCalendarEvent error:', err);
-    // Fallback
     const existing = JSON.parse(localStorage.getItem('tecnolingo_calendar_fallback') || '[]');
     const idx = existing.findIndex((e: CalendarEvent) => e.id === id);
     if (idx !== -1) {
@@ -250,23 +227,20 @@ export async function updateCalendarEvent(
  */
 export async function deleteCalendarEvent(id: string): Promise<boolean> {
   try {
-    const res = await postAlCalendario({
-      action: 'eliminarEventoCalendario',
-      email: getUserEmail(),
-      event_id: id,
+    const resp = await fetch(`${LOCAL_API_URL}/api/calendar-events/${id}`, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: getUserEmail() }),
     });
-
+    const res = await resp.json();
     if (!res?.ok) throw new Error(res?.error || 'Error al eliminar evento');
 
-    // Actualizar fallback
     const existing = JSON.parse(localStorage.getItem('tecnolingo_calendar_fallback') || '[]');
     const filtered = existing.filter((e: CalendarEvent) => e.id !== id);
     localStorage.setItem('tecnolingo_calendar_fallback', JSON.stringify(filtered));
-
     return true;
   } catch (err) {
     console.error('[calendarService] deleteCalendarEvent error:', err);
-    // Fallback
     const existing = JSON.parse(localStorage.getItem('tecnolingo_calendar_fallback') || '[]');
     const filtered = existing.filter((e: CalendarEvent) => e.id !== id);
     localStorage.setItem('tecnolingo_calendar_fallback', JSON.stringify(filtered));

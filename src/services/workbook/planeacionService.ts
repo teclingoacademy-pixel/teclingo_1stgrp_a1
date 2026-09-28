@@ -33,21 +33,8 @@ interface PlaneacionResponse {
 }
 
 async function postToDataLake(action: string, payload: Record<string, any>): Promise<PlaneacionResponse> {
-  try {
-    const response = await fetch(DATA_LAKE_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({
-        action,
-        secret: DATA_LAKE_SECRET,
-        ...payload,
-      }),
-    });
-    return await response.json();
-  } catch (error) {
-    console.error(`[planeacionService] Error en ${action}:`, error);
-    return { ok: false, error: String(error) };
-  }
+  console.log(`[Planeacion MOCK] action=${action} — datos van a PostgreSQL`);
+  return { ok: true, data: [] };
 }
 
 /**

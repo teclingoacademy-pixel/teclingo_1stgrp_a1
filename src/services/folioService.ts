@@ -83,19 +83,8 @@ function getUserEmail(): string {
 }
 
 async function postAlFolio(payload: Record<string, unknown>, timeoutMs = 12000): Promise<any> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const resp = await fetch(IDENTITY_API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
-    return await resp.json();
-  } finally {
-    clearTimeout(timer);
-  }
+  console.log(`[Folio MOCK] action=${payload.action} — datos van a PostgreSQL`);
+  return { ok: true, folios: [] };
 }
 
 /* ================================================================

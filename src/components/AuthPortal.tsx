@@ -50,6 +50,9 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
     const raw = (perfil?.rol as string) || (perfil?.role as string) || 'ALUMNO';
     const upper = raw.toUpperCase();
     if (upper === 'DIRECTOR' || upper === 'DOCENTE' || upper === 'ALUMNO') return upper;
+    if (upper === 'ADMIN') return 'DIRECTOR';
+    if (upper === 'TEACHER') return 'DOCENTE';
+    if (upper === 'STUDENT') return 'ALUMNO';
     return 'ALUMNO';
   };
 
@@ -95,17 +98,18 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
     if (googleInitializedRef.current) return;
     const w = window as typeof window & { google?: { accounts?: { id?: { initialize: (config: Record<string, unknown>) => void; renderButton: (el: HTMLElement, config: Record<string, unknown>) => void; disableAutoSelect: () => void } } } };
 
-    googleButtonRef.current.innerHTML = '';
-
-    if (w.google?.accounts?.id) {
-      // Usar una referencia estable para el callback
+    const tryInit = () => {
+      if (googleInitializedRef.current || !googleButtonRef.current) return;
+      if (!w.google?.accounts?.id) return;
+      googleInitializedRef.current = true;
+      googleButtonRef.current!.innerHTML = '';
       w.google.accounts.id.initialize({
         client_id: clientId,
         callback: (response: GoogleCredentialResponse) => {
           handleCredentialResponse(response);
         },
       });
-      w.google.accounts.id.renderButton(googleButtonRef.current, {
+      w.google.accounts.id.renderButton(googleButtonRef.current!, {
         theme: 'outline',
         size: 'large',
         type: 'standard',
@@ -114,14 +118,33 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
         logo_alignment: 'left',
         width: 280,
       });
-      googleInitializedRef.current = true;
+    };
+
+    tryInit();
+
+    if (!googleInitializedRef.current) {
+      let interval: ReturnType<typeof setInterval>;
+      const scriptEl = document.querySelector('script[src="https://accounts.google.com/gsi/client"]');
+      if (scriptEl) {
+        scriptEl.addEventListener('load', tryInit);
+      }
+      interval = setInterval(() => {
+        if (googleInitializedRef.current) { clearInterval(interval); return; }
+        tryInit();
+      }, 500);
+      return () => {
+        clearInterval(interval);
+        if (scriptEl) scriptEl.removeEventListener('load', tryInit);
+        if (googleButtonRef.current) googleButtonRef.current.innerHTML = '';
+      };
     }
+
     return () => {
       if (googleButtonRef.current) {
         googleButtonRef.current.innerHTML = '';
       }
     };
-  }, []); // Array vacío — solo se ejecuta una vez al montar
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

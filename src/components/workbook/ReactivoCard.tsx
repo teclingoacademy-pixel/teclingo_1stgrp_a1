@@ -14,7 +14,7 @@ import React, { useState, useEffect } from 'react';
 import { CheckCircle2, AlertCircle, XCircle, ChevronRight, HelpCircle, BookOpen, Lightbulb, Volume2, Eye, EyeOff, RotateCcw } from 'lucide-react';
 import { stopSpeech } from '@/utils/workbook/audioFeedback';
 import { playAudio, stopAudio, isSpanishInstruction, isValidEnglishForTTS } from '@/services/workbook/ttsService';
-import { SheetTextoBaseRow } from '@/data/workbook/googleDatasheetA1';
+import type { SheetTextoBaseRow } from '@/types/workbook/workbookRows';
 import { AudioControl } from './AudioControl';
 import { SpeakingExercise } from './SpeakingExercise';
 import { WritingExercise } from './WritingExercise';
@@ -56,6 +56,9 @@ export interface ReactivoCardData {
   // Andamiaje Pedagógico (Scaffolding de Traducción)
   mostrar_traduccion?: 'completa' | 'parcial' | 'ninguna' | string | null;
   palabras_clave_traduccion?: string | null;
+
+  // Voz del TTS: 'male' usa backend con género masculino; 'female' (default) usa voz femenina.
+  voz?: 'male' | 'female' | string | null;
 }
 
 export interface ShuffledOptionItem {
@@ -140,6 +143,7 @@ export interface ReactivoCardProps {
   timeLeft?: number;
   textoBase?: SheetTextoBaseRow | null;
   isTutorialOpen?: boolean;
+  isReviewMode?: boolean;
 }
 
 export const ReactivoCard: React.FC<ReactivoCardProps> = ({
@@ -152,20 +156,94 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
   timeLeft,
   textoBase,
   isTutorialOpen = false,
+  isReviewMode = false,
 }) => {
   const [showPista, setShowPista] = useState<boolean>(false);
   const [showTraduccion, setShowTraduccion] = useState<boolean>(true);
   const [isPlayingQuestion, setIsPlayingQuestion] = useState<boolean>(false);
   const [mostrarTextoListening, setMostrarTextoListening] = useState<boolean>(false);
+  const [dictationText, setDictationText] = useState<string>('');
+  const isReviewModeActive = isReviewMode === true;
 
   const isListening = (reactivo.habilidad || '').toLowerCase() === 'listening';
   const isSpeaking = (reactivo.habilidad || '').toLowerCase() === 'speaking';
   const isWriting = (reactivo.habilidad || '').toLowerCase() === 'writing';
+  const isDictation = (reactivo.tipo_pregunta || '').toLowerCase() === 'dictation';
 
   // Extraer texto a reproducir por el TTS
   // En preguntas con espacio en blanco (___), reemplaza el marcador con la respuesta correcta
   // para que el estudiante escuche la oración completa como pista auditiva (ej: "One book is here." o "One child is here.")
   const audioTextToPlay = React.useMemo(() => {
+    // NUEVO (2026-09-27): Writing NUNCA reproduce audio automatico del enunciado.
+    // El componente WritingExercise maneja su propio audio (botones manuales).
+    const skillLower = (reactivo.habilidad || '').toLowerCase();
+    if (skillLower === 'writing') return '';
+    // 0. NUEVO (2026-09-25): Si el reactivo trae audioTTS desde Prisma, úsalo directamente.
+    //    Cubre LISTEN & SELECT, DICTATION, SHADOWING y cualquier tipo con audio explícito.
+    //    Formato esperado: { segments: [{ text: "...", lang: "en", voiceGender: "male" }] }
+    try {
+      const raw = (reactivo as any).audioTTS;
+      if (raw) {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && Array.isArray(parsed.segments) && parsed.segments.length > 0) {
+          const enSeg = parsed.segments.find((s: any) => s && typeof s.text === 'string' && (s.lang || '').startsWith('en'));
+          const first = enSeg || parsed.segments[0];
+          if (first && typeof first.text === 'string' && first.text.trim().length > 0) {
+            return first.text.trim();
+          }
+        }
+      }
+    } catch {
+      // Fallback silencioso a la lógica original
+    }
+
+    // 0.5 NUEVO (2026-09-25): Estrategia de MÁXIMO AUDIO para nivel A1.
+    //     - listen_and_select / audio_comprehension: leer TODO el enunciado (para input auditivo máximo).
+    //     - dictation / shadowing: repetir la frase 2 veces.
+    //     - read_aloud: leer la frase completa.
+    //     - Resto: extraer solo la frase entre comillas.
+    const rawQ = reactivo.pregunta_texto || '';
+    const qType = (reactivo.tipo_pregunta || '').toLowerCase();
+
+    // Extraer la frase entre comillas (respetando apóstrofes: She's, Don't, It's).
+    const extractPhrase = (q: string): string | null => {
+      let m = q.match(/Audio:\s*"([^"]+)"/i);
+      if (!m) m = q.match(/Audio:\s*'([^']+)'/i);
+      if (!m) m = q.match(/[""]([^""]+)[""]/);  // tipográficas
+      return m && m[1] ? m[1].trim() : null;
+    };
+
+    const extractedPhrase = extractPhrase(rawQ);
+
+    // LISTEN & SELECT / AUDIO COMPREHENSION → leer TODO el enunciado
+    if (qType === 'listen_and_select' || qType === 'audio_comprehension') {
+      const fullText = rawQ.replace(/^\s*Audio:\s*/i, '').trim();
+      if (isValidEnglishForTTS(fullText)) {
+        return fullText;
+      }
+    }
+
+    // DICTATION / SHADOWING → repetir la frase 2 veces (con pausa)
+    if (qType === 'dictation' || qType === 'shadowing') {
+      const phrase = extractedPhrase || (reactivo.respuesta_correcta || '').trim();
+      if (phrase && isValidEnglishForTTS(phrase)) {
+        return `${phrase}. ... ${phrase}.`;
+      }
+    }
+
+    // READ_ALOUD → frase completa
+    if (qType === 'read_aloud') {
+      const phrase = extractedPhrase || (reactivo.respuesta_correcta || '').trim();
+      if (phrase && isValidEnglishForTTS(phrase)) {
+        return phrase;
+      }
+    }
+
+    // Default: solo la frase extraída
+    if (extractedPhrase && isValidEnglishForTTS(extractedPhrase)) {
+      return extractedPhrase;
+    }
+
     // 1. Si hay audio explícito [Audio: '...']
     if (reactivo.pregunta_texto) {
       const match = reactivo.pregunta_texto.match(/\[Audio:\s*['"]?([^'"]+)['"]?\]/i);
@@ -272,15 +350,29 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     }
 
     return '';
-  }, [reactivo.pregunta_texto, reactivo.respuesta_correcta, reactivo.frase_traduccion, isListening]);
+  }, [reactivo.pregunta_texto, reactivo.respuesta_correcta, reactivo.frase_traduccion, (reactivo as any).audioTTS, isListening]);
 
   // Frase limpia a mostrar en la tarjeta de la pregunta:
   // En ejercicios de "Completa la oración", solo muestra la frase con el espacio en blanco (ej: "One ___ is here."),
   // retirando traducciones al español entre paréntesis para evitar redundancia y fatiga visual.
   const displayQuestionText = React.useMemo(() => {
     if (!reactivo.pregunta_texto) return '';
-    return reactivo.pregunta_texto.replace(/\s*\([^)]*\)\s*$/g, '').trim();
-  }, [reactivo.pregunta_texto]);
+    let q = reactivo.pregunta_texto;
+    // NUEVO (2026-09-25): En LISTENING, quitar el prefijo 'Audio: "..." ' del visual,
+    // porque el audio ya se reproduce con el botón grande. Mostrar solo la pregunta real.
+    const qType = (reactivo.tipo_pregunta || '').toLowerCase();
+    if (qType === 'listen_and_select' || qType === 'audio_comprehension' || qType === 'dictation') {
+      q = q.replace(/^\s*Audio:\s*[""'][^""']*[""']\s*[?.!]?\s*/i, '');
+      q = q.replace(/^\s*Audio:\s*/i, '');
+    }
+    // NUEVO (2026-09-25): limpieza universal de prefijos comunes
+    q = q.replace(/^\s*Question:\s*/i, '');
+    q = q.replace(/^\s*Audio:\s*/i, '');
+    q = q.replace(/^\s*Pregunta:\s*/i, '');
+    q = q.replace(/\s+Oral answer:\s*$/i, '');
+    q = q.replace(/^\s*Frase:\s*/i, '');
+    return q.replace(/\s*\([^)]*\)\s*$/g, '').trim();
+  }, [reactivo.pregunta_texto, reactivo.tipo_pregunta]);
 
   // Opciones mezcladas con Fisher-Yates por reactivo
   const [opcionesMezcladas, setOpcionesMezcladas] = useState<ShuffledOptionItem[]>(() =>
@@ -293,13 +385,67 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     setShowPista(false);
     setShowTraduccion(true);
     setMostrarTextoListening(false);
+    setDictationText('');
 
     return () => {
       stopSpeech();
       stopAudio();
       setIsPlayingQuestion(false);
     };
-  }, [reactivo.reactivo_id, reactivo.contexto_espanol, reactivo.habilidad, isListening]);
+    // FIX 2026-09-25: SOLO depende de reactivo_id.
+    // Otras deps causaban que el textarea se resetee en re-renders del padre.
+  }, [reactivo.reactivo_id]);
+
+  // FIX 2026-09-25: Handler para dictation con validación tolerante.
+  // Ignora mayúsculas, puntuación, espacios extra y normaliza contracciones.
+  // NO tolera errores ortográficos reales (studnt ≠ student).
+  const normalizeDictation = (s: string): string => {
+    let out = s.toLowerCase().trim();
+    // 0. Apóstrofes tipográficos → ASCII
+    out = out.replace(/[‘’`´]/g, "'");
+    // 1. Espacios alrededor de apóstrofes: "i 'm" → "i'm"
+    out = out.replace(/s+'s*/g, "'");
+    // 2. Expandir contracciones comunes
+    out = out.replace(/(w+)'m/g, '$1 am');
+    out = out.replace(/(w+)'re/g, '$1 are');
+    out = out.replace(/(w+)'ve/g, '$1 have');
+    out = out.replace(/(w+)'ll/g, '$1 will');
+    out = out.replace(/(w+)'d/g, '$1 would');
+    out = out.replace(/(w+)n't/g, '$1 not');
+    // 3. Quitar puntuación
+    out = out.replace(/[.,!?;:¿¡"«»()[]]/g, '');
+    // 4. Colapsar espacios
+    out = out.replace(/s+/g, ' ').trim();
+    return out;
+  };
+
+  const handleSubmitDictation = () => {
+    const raw = dictationText.trim();
+    if (!raw) return;
+
+    const normalizedInput = normalizeDictation(raw);
+    const normalizedAnswer = normalizeDictation(reactivo.respuesta_correcta || '');
+
+    if (normalizedInput === normalizedAnswer) {
+      // LOG DE DIAGNOSTICO COMPLETO
+      const dump = (s: string) => Array.from(s).map((ch: string) => ch.charCodeAt(0)).join(',');
+      console.log('========== DICT DIAGNOSTICO ==========');
+      console.log('[raw]               ', JSON.stringify(raw), 'len=' + raw.length);
+      console.log('[respuesta_correcta]', JSON.stringify(reactivo.respuesta_correcta), 'len=' + (reactivo.respuesta_correcta || '').length);
+      console.log('[norm input]        ', JSON.stringify(normalizedInput), 'len=' + normalizedInput.length);
+      console.log('[norm answer]       ', JSON.stringify(normalizedAnswer), 'len=' + normalizedAnswer.length);
+      console.log('[bytes input]       ', dump(raw));
+      console.log('[bytes answer]      ', dump(reactivo.respuesta_correcta || ''));
+      console.log('[MATCH?]            ', normalizedInput === normalizedAnswer);
+      console.log('======================================');
+
+      if (normalizedInput === normalizedAnswer) {
+        onSelectOption(reactivo.respuesta_correcta);
+      } else {
+        onSelectOption(raw);
+      }
+    }
+  };
 
   // Manejador centralizado para reproducir o detener audio TTS
   const handleToggleAudio = () => {
@@ -315,7 +461,8 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
         return;
       }
       setIsPlayingQuestion(true);
-      playAudio(audioTextToPlay, {
+      playAudio(audioTextToPlay, { forceLang: 'en-US',
+        voiceGender: (reactivo.voz === 'male' ? 'male' : 'female'),
         onStart: () => setIsPlayingQuestion(true),
         onEnd: () => setIsPlayingQuestion(false),
         onError: () => setIsPlayingQuestion(false),
@@ -336,7 +483,8 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
 
     setTimeout(() => {
       setIsPlayingQuestion(true);
-      playAudio(audioTextToPlay, {
+      playAudio(audioTextToPlay, { forceLang: 'en-US',
+        voiceGender: (reactivo.voz === 'male' ? 'male' : 'female'),
         onStart: () => setIsPlayingQuestion(true),
         onEnd: () => setIsPlayingQuestion(false),
         onError: () => setIsPlayingQuestion(false),
@@ -354,7 +502,7 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     }
 
     // Regla estricta para Listening y Speaking: SIN AUTOPLAY al cargar la página
-    if (isListening || isSpeaking) {
+    if (isListening || isSpeaking || isWriting) {
       setIsPlayingQuestion(false);
       return;
     }
@@ -369,7 +517,8 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     const timer = setTimeout(() => {
       if (isCancelled) return;
       setIsPlayingQuestion(true);
-      playAudio(audioTextToPlay, {
+      playAudio(audioTextToPlay, { forceLang: 'en-US',
+        voiceGender: (reactivo.voz === 'male' ? 'male' : 'female'),
         onStart: () => {
           if (!isCancelled) setIsPlayingQuestion(true);
         },
@@ -393,7 +542,7 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
 
   // Mostrar automáticamente la pista de vocabulario al fallar el 1er intento (2ª oportunidad)
   useEffect(() => {
-    if (validationState === 'first_fail' && reactivo.pista_vocabulario) {
+    if (effectiveValidationState === 'first_fail' && reactivo.pista_vocabulario) {
       setShowPista(true);
     }
   }, [validationState, reactivo.pista_vocabulario]);
@@ -440,7 +589,9 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     return '';
   }, [reactivo.palabras_clave_traduccion, reactivo.pista_vocabulario, reactivo.frase_traduccion]);
 
-  const isResolved = validationState === 'correct' || validationState === 'second_fail';
+  const effectiveValidationState = isReviewModeActive ? 'correct' : validationState;
+  const effectiveSelectedOption = isReviewModeActive ? reactivo.respuesta_correcta : selectedOption;
+  const isResolved = isReviewModeActive || effectiveValidationState === 'correct' || effectiveValidationState === 'second_fail';
 
   return (
     <div className="bg-white border border-gray-200 rounded-2xl p-4 sm:p-7 shadow-sm text-left max-w-full">
@@ -472,7 +623,13 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
         <div className="mb-4 p-3.5 sm:p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-950">
           <p className="text-xs sm:text-sm font-semibold text-blue-900 flex items-center gap-2">
             <Volume2 className="w-4 h-4 text-blue-600 shrink-0" />
-            <span>{reactivo.contexto_espanol || 'Escucha el audio y selecciona lo que oyes:'}</span>
+            <span>
+              {reactivo.contexto_espanol || (
+                (reactivo.tipo_pregunta === 'dictation')
+                  ? 'Escucha y escribe exactamente lo que oyes:'
+                  : 'Escucha el audio y selecciona lo que oyes:'
+              )}
+            </span>
           </p>
         </div>
       ) : (
@@ -560,25 +717,67 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
             )}
           </div>
 
-          {/* ORACIÓN CON ESPACIO EN BLANCO (LISTENING CLOZE) */}
-          <div className="bg-white rounded-xl p-4 sm:p-5 border-2 border-slate-200 text-center shadow-xs">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <p className="text-xs uppercase tracking-wider font-semibold text-slate-500">Completa lo que escuchas:</p>
-              {textoBase && (
+          {/* FIX 2026-09-25: DICTATION vs CLOZE */}
+          {isDictation ? (
+            <div className="bg-white rounded-xl p-4 sm:p-5 border-2 border-blue-300 shadow-xs">
+              <div className="flex items-center justify-between gap-2 mb-3">
+                <p className="text-xs uppercase tracking-wider font-semibold text-blue-600">
+                  ✍️ Escribe exactamente lo que escuchas:
+                </p>
+                {textoBase && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarTextoListening((prev) => !prev)}
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer hover:underline"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>{mostrarTextoListening ? 'Ocultar texto base' : 'Ver texto base'}</span>
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={dictationText}
+                onChange={(e) => setDictationText(e.target.value)}
+                disabled={isResolved}
+                placeholder="Escribe exactamente lo que escuchas en inglés..."
+                className="w-full min-h-[80px] p-3 rounded-xl border-2 border-blue-200 focus:border-blue-500 focus:outline-none text-base font-mono resize-y disabled:bg-gray-50 disabled:text-gray-500"
+              />
+              {!isResolved && (
                 <button
                   type="button"
-                  onClick={() => setMostrarTextoListening((prev) => !prev)}
-                  className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer hover:underline"
+                  disabled={!dictationText.trim()}
+                  onClick={() => {
+                    console.log('[BTN-CLICK] dictationText=', JSON.stringify(dictationText));
+                    console.log('[BTN-CLICK] isResolved=', isResolved, 'validationState=', effectiveValidationState);
+                    console.log('[BTN-CLICK] disabled=', !dictationText.trim());
+                    handleSubmitDictation();
+                  }}
+                  className="mt-3 w-full sm:w-auto px-6 py-3 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-sm disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-95"
                 >
-                  <BookOpen className="w-3.5 h-3.5" />
-                  <span>{mostrarTextoListening ? 'Ocultar texto base' : 'Ver texto base'}</span>
+                  ✓ Comprobar respuesta
                 </button>
               )}
             </div>
-            <div className="text-xl sm:text-2xl font-bold text-slate-900 font-sans tracking-wide">
-              {displayQuestionText || reactivo.pregunta_texto}
+          ) : (
+            <div className="bg-white rounded-xl p-4 sm:p-5 border-2 border-slate-200 text-center shadow-xs">
+              <div className="flex items-center justify-between gap-2 mb-1.5">
+                <p className="text-xs uppercase tracking-wider font-semibold text-slate-500">Completa lo que escuchas:</p>
+                {textoBase && (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarTextoListening((prev) => !prev)}
+                    className="inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-800 font-medium cursor-pointer hover:underline"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    <span>{mostrarTextoListening ? 'Ocultar texto base' : 'Ver texto base'}</span>
+                  </button>
+                )}
+              </div>
+              <div className="text-xl sm:text-2xl font-bold text-slate-900 font-sans tracking-wide">
+                {displayQuestionText || reactivo.pregunta_texto}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* DESPLEGABLE DE TEXTO BASE (A1_C01_TXT01 / My Classroom) */}
           {mostrarTextoListening && textoBase && (
@@ -733,7 +932,7 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
         <div className="space-y-2.5 sm:space-y-3 mb-4">
           {(opcionesMezcladas.length > 0 ? opcionesMezcladas : getInitialShuffledOptions(reactivo)).map((item, idx) => {
             const option = item.texto;
-            const isSelected = selectedOption === option;
+            const isSelected = effectiveSelectedOption === option;
             const isCorrect =
               option === reactivo.respuesta_correcta ||
               option.trim().toLowerCase() === (reactivo.respuesta_correcta || '').trim().toLowerCase() ||
@@ -748,19 +947,19 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
 
             let optionStyle = 'bg-white border-gray-200 text-gray-800 hover:bg-gray-50 hover:border-gray-300';
 
-            if (validationState === 'correct') {
+            if (effectiveValidationState === 'correct') {
               if (isCorrect) {
                 optionStyle = 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold';
               } else if (isSelected) {
                 optionStyle = 'bg-gray-100 border-gray-200 text-gray-400 line-through';
               }
-            } else if (validationState === 'first_fail') {
+            } else if (effectiveValidationState === 'first_fail') {
               if (isSelected) {
                 optionStyle = 'bg-amber-50/80 border-amber-400 text-amber-900 line-through opacity-75 cursor-not-allowed';
               } else {
                 optionStyle = 'bg-white border-blue-200 text-gray-800 hover:bg-blue-50 hover:border-blue-400 cursor-pointer shadow-xs';
               }
-            } else if (validationState === 'second_fail') {
+            } else if (effectiveValidationState === 'second_fail') {
               if (isCorrect) {
                 optionStyle = 'bg-emerald-50 border-emerald-500 text-emerald-950 font-bold ring-2 ring-emerald-300';
               } else if (isSelected) {
@@ -768,14 +967,14 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
               }
             }
 
-            const isFailedFirst = validationState === 'first_fail' && isSelected;
+            const isFailedFirst = effectiveValidationState === 'first_fail' && isSelected;
 
             return (
               <button
                 key={`${option}_${idx}`}
                 type="button"
-                disabled={isResolved || isFailedFirst}
-                onClick={() => onSelectOption(option)}
+                disabled={isResolved || isFailedFirst || isReviewModeActive}
+                onClick={() => { if (isReviewModeActive) return; onSelectOption(option); }}
                 className={`w-full p-3 sm:p-4 rounded-xl border text-left flex items-center justify-between transition-all duration-200 cursor-pointer text-xs sm:text-base gap-3 break-words shadow-xs ${optionStyle}`}
               >
                 <div className="flex items-start sm:items-center gap-3 min-w-0">
@@ -793,21 +992,21 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
                 </div>
 
                 <div className="flex items-center gap-2 shrink-0">
-                  {validationState === 'correct' && isCorrect && (
+                  {effectiveValidationState === 'correct' && isCorrect && (
                     <CheckCircle2 className="w-5 h-5 text-emerald-600" />
                   )}
-                  {validationState === 'first_fail' && isSelected && (
+                  {effectiveValidationState === 'first_fail' && isSelected && (
                     <span className="text-[11px] font-mono font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
                       1º Intento
                     </span>
                   )}
-                  {validationState === 'second_fail' && isCorrect && (
+                  {effectiveValidationState === 'second_fail' && isCorrect && (
                     <span className="text-[11px] font-mono font-bold text-emerald-800 bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300 flex items-center gap-1">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       Correcta
                     </span>
                   )}
-                  {validationState === 'second_fail' && isSelected && !isCorrect && (
+                  {effectiveValidationState === 'second_fail' && isSelected && !isCorrect && (
                     <XCircle className="w-5 h-5 text-rose-600" />
                   )}
                 </div>
@@ -817,19 +1016,7 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
         </div>
       )}
 
-      {/* BOTÓN REPETIR AUDIO (Específico para Listening) */}
-      {isListening && (
-        <div className="mb-4">
-          <button
-            type="button"
-            onClick={handleRepeatAudio}
-            className="text-blue-600 hover:text-blue-700 font-medium text-xs sm:text-sm flex items-center space-x-2 cursor-pointer py-1.5 px-3 rounded-lg hover:bg-blue-50 border border-blue-200/80 transition-colors"
-          >
-            <RotateCcw className="w-4 h-4" />
-            <span>Repetir audio</span>
-          </button>
-        </div>
-      )}
+
 
       {/* 4. Pista de Vocabulario (solo si no es listening y existe pista) */}
       {!isListening && reactivo.pista_vocabulario && (
@@ -858,16 +1045,16 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
       {/* Immediate Feedback & Explicación Detallada */}
       {validationState !== 'unanswered' && !isSpeaking && (
         <div className={`p-4 rounded-xl border mb-5 animate-fadeIn shadow-xs ${
-          validationState === 'correct'
+          effectiveValidationState === 'correct'
             ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
-            : validationState === 'first_fail'
+            : effectiveValidationState === 'first_fail'
             ? 'bg-amber-50 border-amber-300 text-amber-950'
             : 'bg-rose-50 border-rose-300 text-rose-950'
         }`}>
           <div className="flex items-start gap-3">
-            {validationState === 'correct' ? (
+            {effectiveValidationState === 'correct' ? (
               <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
-            ) : validationState === 'first_fail' ? (
+            ) : effectiveValidationState === 'first_fail' ? (
               <AlertCircle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5 animate-bounce" />
             ) : (
               <XCircle className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
@@ -876,19 +1063,19 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
             <div className="min-w-0 flex-1">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
                 <span className="font-bold text-sm sm:text-base">
-                  {validationState === 'correct' && '✅ ¡Respuesta Correcta! (+15 XP)'}
-                  {validationState === 'first_fail' && '⚠️ ¡Respuesta incorrecta! Tienes una 2ª oportunidad'}
-                  {validationState === 'second_fail' && '❌ Te has equivocado 2 veces (ya no hay más oportunidades)'}
+                  {effectiveValidationState === 'correct' && '✅ ¡Respuesta Correcta! (+15 XP)'}
+                  {effectiveValidationState === 'first_fail' && '⚠️ ¡Respuesta incorrecta! Tienes una 2ª oportunidad'}
+                  {effectiveValidationState === 'second_fail' && '❌ Te has equivocado 2 veces (ya no hay más oportunidades)'}
                 </span>
 
                 {/* Indicador de avance automático */}
-                {validationState === 'correct' && (
+                {effectiveValidationState === 'correct' && (
                   <span className="text-xs font-mono font-bold text-emerald-700 bg-emerald-100/90 px-2.5 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1.5 self-start sm:self-auto">
                     <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping inline-block" />
                     Pasando al siguiente reactivo...
                   </span>
                 )}
-                {validationState === 'second_fail' && (
+                {effectiveValidationState === 'second_fail' && (
                   <span className="text-xs font-mono font-bold text-rose-700 bg-rose-100/90 px-2.5 py-0.5 rounded-full border border-rose-200 flex items-center gap-1.5 self-start sm:self-auto">
                     <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping inline-block" />
                     Cambiando de reactivo...
@@ -896,11 +1083,13 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
                 )}
               </div>
 
-              {validationState === 'first_fail' && (
+              {effectiveValidationState === 'first_fail' && (
                 <div className="mt-2 text-xs sm:text-sm text-amber-900 leading-relaxed font-medium bg-white/70 p-2.5 rounded-lg border border-amber-200">
                   <p>
-                    {isListening 
-                      ? '👂 Escucha nuevamente el audio y selecciona otra opción para tu 2ª oportunidad.' 
+                    {isDictation
+                      ? '👂 Vuelve a escuchar el audio y escribe la respuesta correcta para tu 2ª oportunidad.'
+                      : isListening
+                      ? '👂 Escucha nuevamente el audio y selecciona otra opción para tu 2ª oportunidad.'
                       : '💡 Has tenido un primer fallo. Elige otra de las opciones disponibles para completar tu segunda oportunidad.'}
                   </p>
                 </div>

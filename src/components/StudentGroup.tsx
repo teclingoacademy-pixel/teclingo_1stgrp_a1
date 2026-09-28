@@ -109,8 +109,16 @@ export function StudentGroup() {
           </h1>
           <div className="flex items-center gap-4 mt-2 text-white/40 text-[10px] font-bold uppercase tracking-widest">
             <span className="flex items-center gap-1"><BookOpen size={12} /> {grupo.nivel}</span>
-            <span className="flex items-center gap-1"><Clock size={12} /> {grupo.horario || 'Sin horario'}</span>
-            <span className="flex items-center gap-1"><Users size={12} /> {grupo.dias || '—'}</span>
+            <span className="flex items-center gap-1"><Clock size={12} /> {
+              grupo.sesiones && grupo.sesiones.length > 0
+                ? grupo.sesiones.map(s => `${s.horaInicio}-${s.horaFin}`).join(', ')
+                : 'Sin horario'
+            }</span>
+            <span className="flex items-center gap-1"><Users size={12} /> {
+              grupo.sesiones && grupo.sesiones.length > 0
+                ? grupo.sesiones.flatMap(s => s.dias.split(',').map(d => d.trim())).filter((v, i, a) => a.indexOf(v) === i).join(', ')
+                : '—'
+            }</span>
           </div>
         </div>
         <div className="flex flex-col items-end gap-2">
@@ -228,19 +236,23 @@ export function StudentGroup() {
               </div>
               <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
                 <span className="text-white/30 text-[8px] font-black uppercase tracking-widest">Horario</span>
-                <span className="text-white text-xs font-bold">{grupo.horario || '—'}</span>
+                <span className="text-white text-xs font-bold">
+                  {grupo.sesiones && grupo.sesiones.length > 0
+                    ? grupo.sesiones.map(s => `${s.horaInicio}-${s.horaFin}`).join(', ')
+                    : '—'}
+                </span>
               </div>
               <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
                 <span className="text-white/30 text-[8px] font-black uppercase tracking-widest">Días</span>
-                <span className="text-white text-xs font-bold">{grupo.dias || '—'}</span>
+                <span className="text-white text-xs font-bold">
+                  {grupo.sesiones && grupo.sesiones.length > 0
+                    ? grupo.sesiones.flatMap(s => s.dias.split(',').map(d => d.trim())).filter((v, i, a) => a.indexOf(v) === i).join(', ')
+                    : '—'}
+                </span>
               </div>
               <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
                 <span className="text-white/30 text-[8px] font-black uppercase tracking-widest">Capacidad</span>
                 <span className="text-white text-xs font-bold">{grupo.alumnos_inscritos || 0} / {grupo.capacidad}</span>
-              </div>
-              <div className="flex items-center justify-between bg-white/5 rounded-xl px-4 py-3">
-                <span className="text-white/30 text-[8px] font-black uppercase tracking-widest">Code ID</span>
-                <span className="text-[#DEFF9A] text-[10px] font-mono font-bold">{grupo.code_id}</span>
               </div>
             </div>
           </GlassCard>
@@ -254,7 +266,11 @@ export function StudentGroup() {
             <p className="text-white/50 text-[10px] font-medium leading-relaxed mb-3">
               Revisa tu horario de grupo para la próxima sesión. Prepárate con tu material.
             </p>
-            <p className="text-[#22D3EE] text-[9px] font-black uppercase tracking-widest">{grupo.horario || 'Por definir'}</p>
+            <p className="text-[#22D3EE] text-[9px] font-black uppercase tracking-widest">
+              {grupo.sesiones && grupo.sesiones.length > 0
+                ? grupo.sesiones.map(s => `${s.horaInicio}-${s.horaFin}`).join(', ')
+                : 'Por definir'}
+            </p>
           </div>
         </div>
       </div>

@@ -1,11 +1,19 @@
 import { useState, useEffect } from 'react';
-import { Languages, Plus, Users, Copy, Check, Trash2, UserPlus, Clock } from 'lucide-react';
+import { Languages, Plus, Users, Copy, Check, Trash2, UserPlus, Clock, X, GripVertical } from 'lucide-react';
 import { useAppContext } from '../context/AppContext';
 import identityService from '../services/identityService';
 import { obtenerConfigAcademica, listarUsuarios } from '../services/identityService';
-import type { GrupoIngles, MiembroGrupo, UsuarioComunidad } from '../services/identityService';
+import type { GrupoIngles, MiembroGrupo, UsuarioComunidad, SesionHorario } from '../services/identityService';
 
 const MODULOS = ['MODULO I', 'MODULO II', 'MODULO III', 'MODULO IV', 'MODULO V', 'MODULO VI'];
+
+const TURNOS_INSTITUCION = [
+  'MATUTINO',
+  'VESPERTINO',
+  'SEMI-ESCOLARIZADO',
+  'SABATINO',
+  'DISTANCIA / EN LÍNEA',
+];
 
 const DIAS_SEMANA = [
   { key: 'LU', label: 'LU', full: 'Lunes' },
@@ -16,6 +24,17 @@ const DIAS_SEMANA = [
   { key: 'SA', label: 'SA', full: 'Sábado' },
   { key: 'DO', label: 'DO', full: 'Domingo' },
 ];
+
+interface SesionForm {
+  id: string;
+  horaInicio: string;
+  horaFin: string;
+  diasArr: string[];
+}
+
+function newSesion(): SesionForm {
+  return { id: Date.now().toString(), horaInicio: '08:00', horaFin: '10:00', diasArr: [] };
+}
 
 export function GruposInglesDirector() {
   const { userEmail } = useAppContext();
@@ -34,12 +53,9 @@ export function GruposInglesDirector() {
     grupo: 'A',
     nivel: 'A1',
     turno: '',
-    horarioInicio: '08:00',
-    horarioFin: '10:00',
-    dias: 'LU,MA,MI,JU,VI',
-    diasArr: ['LU', 'MA', 'MI', 'JU', 'VI'],
     capacidad: 30
   });
+  const [sesiones, setSesiones] = useState<SesionForm[]>([newSesion()]);
   const [docenteEmail, setDocenteEmail] = useState('');
   const [error, setError] = useState('');
 
@@ -52,12 +68,16 @@ export function GruposInglesDirector() {
 
   const cargarTurnos = async () => {
     if (!email) return;
-    const cfg = await obtenerConfigAcademica({ email });
-    if (cfg.ok && Array.isArray(cfg.turnos)) {
-      setTurnos(cfg.turnos);
-      if (cfg.turnos.length > 0 && !form.turno) {
-        setForm(prev => ({ ...prev, turno: cfg.turnos![0] }));
+    try {
+      const cfg = await obtenerConfigAcademica({ email });
+      if (cfg.ok && Array.isArray(cfg.turnos) && cfg.turnos.length > 0) {
+        setTurnos(cfg.turnos);
+        if (!form.turno) {
+          setForm(prev => ({ ...prev, turno: cfg.turnos![0] }));
+        }
       }
+    } catch (err) {
+      console.warn('[GruposInglesDirector] Error cargando turnos:', err);
     }
   };
 
@@ -75,21 +95,34 @@ export function GruposInglesDirector() {
     if (!form.nombre.trim()) { setError('Selecciona un módulo'); return; }
     if (!form.turno) { setError('Selecciona un turno'); return; }
 
-    const horario = `${form.horarioInicio}-${form.horarioFin}`;
+    const validSesiones = sesiones
+      .filter(s => s.diasArr.length > 0)
+      .map((s, i) => ({
+        horaInicio: s.horaInicio,
+        horaFin: s.horaFin,
+        dias: s.diasArr.join(','),
+        orden: i + 1,
+      }));
+
+    if (validSesiones.length === 0) {
+      setError('Agrega al menos una sesión con un día y horario');
+      return;
+    }
+
     const payload = {
       nombre: form.nombre,
       grupo: form.grupo,
       nivel: form.nivel,
       turno: form.turno,
-      horario,
-      dias: form.dias,
+      sesiones: validSesiones,
       capacidad: form.capacidad
     };
 
     const res = await identityService.crearGrupoIngles(email, payload);
     if (res.ok) {
       setShowCreate(false);
-      setForm({ nombre: 'MODULO I', grupo: 'A', nivel: 'A1', turno: turnos[0] || '', horarioInicio: '08:00', horarioFin: '10:00', dias: 'LU,MA,MI,JU,VI', diasArr: ['LU', 'MA', 'MI', 'JU', 'VI'], capacidad: 30 });
+      setForm({ nombre: 'MODULO I', grupo: 'A', nivel: 'A1', turno: turnos[0] || '', capacidad: 30 });
+      setSesiones([newSesion()]);
       cargarGrupos();
     } else {
       setError(res.error || 'Error al crear grupo');
@@ -212,85 +245,124 @@ export function GruposInglesDirector() {
             )}
           </div>
 
-          {/* Fila 3: Horario estilo reloj */}
+          {/* SESIONES DE CLASE */}
           <div>
-            <label className="block text-white/40 text-[10px] font-bold uppercase tracking-wider mb-1.5">
-              <Clock size={12} className="inline mr-1" /> Horario de Clase
-            </label>
-            <div className="flex items-center gap-3">
-              <div className="flex-1">
-                <label className="block text-white/20 text-[9px] font-bold uppercase mb-1">Hora Inicio</label>
-                <input
-                  type="time"
-                  value={form.horarioInicio}
-                  onChange={e => setForm({ ...form, horarioInicio: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#DEFF9A] [color-scheme:dark]"
-                />
-              </div>
-              <div className="text-white/30 text-lg font-bold mt-5">—</div>
-              <div className="flex-1">
-                <label className="block text-white/20 text-[9px] font-bold uppercase mb-1">Hora Fin</label>
-                <input
-                  type="time"
-                  value={form.horarioFin}
-                  onChange={e => setForm({ ...form, horarioFin: e.target.value })}
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#DEFF9A] [color-scheme:dark]"
-                />
-              </div>
+            <div className="flex items-center justify-between mb-3">
+              <label className="block text-white/40 text-[10px] font-bold uppercase tracking-wider">
+                <Clock size={12} className="inline mr-1" /> Sesiones de Clase
+              </label>
+              <button
+                type="button"
+                onClick={() => setSesiones(prev => [...prev, newSesion()])}
+                className="flex items-center gap-1 px-2 py-1 bg-[#DEFF9A]/10 border border-[#DEFF9A]/30 text-[#DEFF9A] text-[10px] font-bold uppercase rounded hover:bg-[#DEFF9A]/20 transition-colors"
+              >
+                <Plus size={12} /> Agregar Sesión
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              {sesiones.map((sesion, idx) => (
+                <div key={sesion.id} className="bg-white/5 border border-white/10 rounded-lg p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-white/50 text-[10px] font-bold uppercase tracking-wider">
+                      Sesión {idx + 1}
+                    </span>
+                    {sesiones.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => setSesiones(prev => prev.filter(s => s.id !== sesion.id))}
+                        className="text-red-400/50 hover:text-red-400 transition-colors"
+                        title="Eliminar sesión"
+                      >
+                        <X size={14} />
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Horario */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-white/20 text-[9px] font-bold uppercase mb-1">Hora Inicio</label>
+                      <input
+                        type="time"
+                        value={sesion.horaInicio}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setSesiones(prev => prev.map(s => s.id === sesion.id ? { ...s, horaInicio: val } : s));
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#DEFF9A] [color-scheme:dark]"
+                      />
+                    </div>
+                    <div className="text-white/30 text-lg font-bold mt-5">—</div>
+                    <div className="flex-1">
+                      <label className="block text-white/20 text-[9px] font-bold uppercase mb-1">Hora Fin</label>
+                      <input
+                        type="time"
+                        value={sesion.horaFin}
+                        onChange={e => {
+                          const val = e.target.value;
+                          setSesiones(prev => prev.map(s => s.id === sesion.id ? { ...s, horaFin: val } : s));
+                        }}
+                        className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-[#DEFF9A] [color-scheme:dark]"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Días de esta sesión */}
+                  <div>
+                    <label className="block text-white/20 text-[9px] font-bold uppercase mb-1.5">Días de Clase</label>
+                    <div className="flex gap-1.5">
+                      {DIAS_SEMANA.map(d => {
+                        const activo = sesion.diasArr.includes(d.key);
+                        return (
+                          <button
+                            key={d.key}
+                            type="button"
+                            onClick={() => {
+                              const nuevaArr = activo
+                                ? sesion.diasArr.filter(k => k !== d.key)
+                                : [...sesion.diasArr, d.key];
+                              setSesiones(prev => prev.map(s => s.id === sesion.id ? { ...s, diasArr: nuevaArr } : s));
+                            }}
+                            className={`flex-1 py-1.5 rounded text-[9px] font-black uppercase transition-all ${
+                              activo
+                                ? 'bg-[#DEFF9A] text-[#061a1a] shadow-[0_0_6px_rgba(222,255,154,0.3)]'
+                                : 'bg-white/5 text-white/30 border border-white/10 hover:bg-white/10 hover:text-white/50'
+                            }`}
+                          >
+                            {d.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                    {sesion.diasArr.length > 0 ? (
+                      <p className="text-white/40 text-[9px] mt-1">
+                        → <span className="text-[#DEFF9A] font-bold">{sesion.diasArr.map(k => DIAS_SEMANA.find(d => d.key === k)?.full).filter(Boolean).join(', ')}</span>
+                      </p>
+                    ) : (
+                      <p className="text-white/20 text-[9px] mt-1 italic">Selecciona días para esta sesión</p>
+                    )}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
 
-          {/* Fila 4: Días + Límite */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-white/40 text-[10px] font-bold uppercase tracking-wider mb-1.5">Días de Clase</label>
-              <div className="flex gap-1.5">
-                {DIAS_SEMANA.map(d => {
-                  const activo = form.diasArr.includes(d.key);
-                  return (
-                    <button
-                      key={d.key}
-                      type="button"
-                      onClick={() => {
-                        const nuevaArr = activo
-                          ? form.diasArr.filter(k => k !== d.key)
-                          : [...form.diasArr, d.key];
-                        setForm({ ...form, diasArr: nuevaArr, dias: nuevaArr.join(',') });
-                      }}
-                      className={`flex-1 py-2 rounded-lg text-[10px] font-black uppercase transition-all ${
-                        activo
-                          ? 'bg-[#DEFF9A] text-[#061a1a] shadow-[0_0_8px_rgba(222,255,154,0.3)]'
-                          : 'bg-white/5 text-white/30 border border-white/10 hover:bg-white/10 hover:text-white/50'
-                      }`}
-                    >
-                      {d.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {form.diasArr.length > 0 ? (
-                <p className="text-white/40 text-[10px] mt-1.5">
-                  Seleccionados: <span className="text-[#DEFF9A] font-bold">{form.diasArr.map(k => DIAS_SEMANA.find(d => d.key === k)?.full).filter(Boolean).join(', ')}</span>
-                </p>
-              ) : (
-                <p className="text-white/20 text-[10px] mt-1.5 italic">Selecciona al menos un día</p>
-              )}
-            </div>
-            <div>
-              <label className="block text-white/40 text-[10px] font-bold uppercase tracking-wider mb-1.5">Límite de Alumnos</label>
-              <input
-                type="number"
-                min={1}
-                max={100}
-                value={form.capacidad}
-                onChange={e => {
-                  const val = parseInt(e.target.value);
-                  if (!isNaN(val) && val > 0) setForm({ ...form, capacidad: val });
-                }}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#DEFF9A]"
-              />
-              <p className="text-white/20 text-[9px] mt-1">Máximo de alumnos permitidos en este grupo</p>
-            </div>
+          {/* Límite de Alumnos */}
+          <div>
+            <label className="block text-white/40 text-[10px] font-bold uppercase tracking-wider mb-1.5">Límite de Alumnos</label>
+            <input
+              type="number"
+              min={1}
+              max={100}
+              value={form.capacidad}
+              onChange={e => {
+                const val = parseInt(e.target.value);
+                if (!isNaN(val) && val > 0) setForm({ ...form, capacidad: val });
+              }}
+              className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-white text-sm focus:outline-none focus:border-[#DEFF9A]"
+            />
+            <p className="text-white/20 text-[9px] mt-1">Máximo de alumnos permitidos en este grupo</p>
           </div>
 
           <button
@@ -336,7 +408,23 @@ export function GruposInglesDirector() {
                   <span className="text-white/30"> / {g.capacidad} (límite)</span>
                 </p>
                 {g.docente_email && <p>Docente: <span className="text-white">{g.docente_email}</span></p>}
-                {g.horario && <p>Horario: <span className="text-white">{g.horario}</span></p>}
+                {g.sesiones && g.sesiones.length > 0 ? (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-white/30 text-[9px] font-bold uppercase tracking-wider">Sesiones:</p>
+                    {g.sesiones.map((s, i) => {
+                      const diasArr = s.dias.split(',').map(d => d.trim());
+                      const diasLabels = diasArr.map(k => DIAS_SEMANA.find(d => d.key === k)?.full || k).join(', ');
+                      return (
+                        <div key={s.id || i} className="flex items-center gap-2 bg-white/5 rounded px-2 py-1">
+                          <Clock size={10} className="text-[#DEFF9A]" />
+                          <span className="text-white text-[10px] font-bold">{s.horaInicio} — {s.horaFin}</span>
+                          <span className="text-white/30 text-[10px]">|</span>
+                          <span className="text-[#DEFF9A] text-[10px]">{diasLabels}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
               </div>
 
               <div className="flex gap-2 pt-2 border-t border-white/5">

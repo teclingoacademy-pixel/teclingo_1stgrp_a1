@@ -45,8 +45,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { GlassCard } from './GlassCard';
 import { LibroVirtual } from './LibroVirtual';
-import { guardarPlaneacionSemana, SemanaPlaneacion } from '../services/workbook/planeacionService';
-import { useAppContext } from '../context/AppContext';
+import { DirectorModeloA1Plus } from './DirectorModeloA1Plus';
+import { useStudyPlan } from '../hooks/useStudyPlan';
 
 const API_URL_READ = (import.meta.env.VITE_IDENTITY_API_URL as string | undefined)?.trim() || "https://script.google.com/macros/s/AKfycbz7buTc2D7FIgWVub6_t4leXfvqc68821957LHOUgP-mBqpWKn_7JaEU-DZWiumAcVb/exec";
 const API_URL_WRITE = API_URL_READ;
@@ -71,24 +71,6 @@ interface TOEFLSkill {
   kpi: string;
   accreditation: string;
   description: string;
-}
-
-interface HoraLeccion {
-  hora: number;
-  leccion: string;
-  enfoque: string;
-  videoId: string;
-  track: string;
-}
-
-interface SemanaMalla {
-  semana: number;
-  fechas: string;
-  eje_tematico: string;
-  unidad_libro: string;
-  paginas: string;
-  horas: HoraLeccion[];
-  kpi: string;
 }
 
 interface GroupDiagnosis {
@@ -145,18 +127,21 @@ const mockGroupDiagnoses: Record<string, GroupDiagnosis> = {
 };
 
 export function DirectorLibrary() {
-  const { userEmail } = useAppContext();
   const [activeSubTab, setActiveSubTab] = useState<
-    'Plan de Estudio' | 'Cargas & Archivos' | 'Libro Virtual Maestro' | 'Estructura Reticular' | 'Distribución Académica' | 'Creador de Exámenes'
+    'Plan de Estudio' | 'Plan Maestro' | 'Cargas & Archivos' | 'Libro Virtual Maestro' | 'Estructura Reticular' | 'Distribución Académica' | 'Creador de Exámenes'
   >('Plan de Estudio');
   const [selectedSemester, setSelectedSemester] = useState<string>('Semestre 01');
   const [searchQuery, setSearchQuery] = useState('');
   const [openWeeks, setOpenWeeks] = useState<{ [key: number]: boolean }>({ 1: true });
   const [dragActive, setDragActive] = useState(false);
 
-  // Estados para cargar malla curricular desde Google Sheets
-  const [mallaCurricularData, setMallaCurricularData] = useState<SemanaMalla[]>([]);
-  const [isLoadingMalla, setIsLoadingMalla] = useState(true);
+  // Malla curricular: esta es la COPIA MAESTRA que consume también el panel del docente.
+  const {
+    weeks: mallaCurricularData,
+    source: mallaSource,
+    loading: isLoadingMalla,
+    refresh: refreshMalla,
+  } = useStudyPlan('S01');
 
   // States for Exam Builder / Test Maker
   const [examTitle, setExamTitle] = useState('EVALUACIÓN PARCIAL DE INGLÉS TÉCNICO I');
@@ -247,109 +232,6 @@ export function DirectorLibrary() {
       console.error(e);
     }
   }, [createdExams]);
-
-  // Cargar malla curricular desde Google Sheets + Data Lake planeación
-  useEffect(() => {
-    const fetchMallaCurricular = async () => {
-      try {
-        setIsLoadingMalla(true);
-        const res = await fetch(`${API_URL_READ}?action=readWorkbookSheet&sheet=MallaCurricular`);
-        const rawData = await res.json();
-
-        // Extraer array: la API puede devolver un array directo, { rows: [...] }, { data: [...] } o { result: [...] }
-        let data: any[] = [];
-        if (Array.isArray(rawData)) {
-          data = rawData;
-        } else if (rawData && typeof rawData === 'object') {
-          data = rawData.rows || rawData.data || rawData.result || [];
-        }
-        if (!Array.isArray(data)) {
-          data = [];
-        }
-
-        // Transformar datos de Sheets al formato SemanaMalla — agrupar por semana
-        const semanaMap = new Map<number, SemanaMalla>();
-        data.forEach((row: any) => {
-          let semanaNum = Number(row.semana) || 0;
-          if (!semanaNum && row.fechas) {
-            const match = String(row.fechas).match(/Semana\s+(\d+)/i);
-            if (match) semanaNum = Number(match[1]);
-          }
-          if (!semanaNum) return;
-
-          let horas: any[] = [];
-          if (row.horas_json) {
-            horas = typeof row.horas_json === 'string' ? JSON.parse(row.horas_json) : row.horas_json;
-          } else if (row.horas) {
-            horas = typeof row.horas === 'string' ? JSON.parse(row.horas) : row.horas;
-          }
-
-          const existing = semanaMap.get(semanaNum);
-          if (existing) {
-            existing.horas = [...existing.horas, ...horas];
-            if (!existing.eje_tematico && row.eje_tematico) existing.eje_tematico = row.eje_tematico;
-            if (!existing.unidad_libro && row.unidad_libro) existing.unidad_libro = row.unidad_libro;
-            if (!existing.kpi && row.kpi) existing.kpi = row.kpi;
-          } else {
-            semanaMap.set(semanaNum, {
-              semana: semanaNum,
-              fechas: row.fechas || '',
-              eje_tematico: row.eje_tematico || '',
-              unidad_libro: row.unidad_libro || '',
-              paginas: row.paginas || '',
-              kpi: row.kpi || '',
-              horas
-            });
-          }
-        });
-        const transformedData: SemanaMalla[] = Array.from(semanaMap.values()).sort((a, b) => a.semana - b.semana);
-
-        // Also fetch planeación from Data Lake PLANEACION_SEMANAS
-        try {
-          const planeRes = await fetch(API_URL_WRITE, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: JSON.stringify({ action: 'obtenerPlaneacion', secret: 'teclingo_secret_2026' })
-          });
-          const planeData = await planeRes.json();
-          if (planeData.ok && planeData.data && planeData.data.length > 0) {
-            planeData.data.forEach((p: any) => {
-              const semanaNum = Number(p.semana);
-              const existing = transformedData.find(w => w.semana === semanaNum);
-              if (existing) {
-                existing.eje_tematico = p.eje_tematico || existing.eje_tematico;
-                existing.unidad_libro = p.unidad_libro || existing.unidad_libro;
-                existing.kpi = p.kpi || existing.kpi;
-              } else {
-                let horas = [];
-                try { horas = JSON.parse(p.horas_json || '[]'); } catch {}
-                transformedData.push({
-                  semana: semanaNum,
-                  fechas: p.fecha_inicio ? `${p.fecha_inicio} - ${p.fecha_fin}` : '',
-                  eje_tematico: p.eje_tematico || '',
-                  unidad_libro: p.unidad_libro || '',
-                  paginas: '',
-                  kpi: p.kpi || '',
-                  horas
-                });
-              }
-            });
-          }
-        } catch (e) {
-          console.warn('[DirectorLibrary] Data Lake planeación no disponible:', e);
-        }
-        
-        setMallaCurricularData(transformedData);
-      } catch (error) {
-        console.error("Error cargando MallaCurricular desde Sheets:", error);
-        addLog("❌ ERROR: Fallo al cargar la malla curricular desde Google Sheets");
-      } finally {
-        setIsLoadingMalla(false);
-      }
-    };
-
-    fetchMallaCurricular();
-  }, []);
 
   const handleAddNewQuestion = (type: 'multiple-choice' | 'true-false' | 'fill-blanks' | 'speaking', predefinedData?: any) => {
     const id = 'q_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
@@ -698,30 +580,32 @@ export function DirectorLibrary() {
   const handleSyncPlaneacionToDataLake = async () => {
     if (!mallaCurricularData.length || isSyncingPlaneacion) return;
     setIsSyncingPlaneacion(true);
-    addLog('CLIENT: Sincronizando planeación curricular al Data Lake...');
+    addLog('CLIENT: Publicando planeación curricular como copia maestra...');
     try {
       let successCount = 0;
       for (const semana of mallaCurricularData) {
-        const payload: SemanaPlaneacion = {
-          semana: semana.semana,
-          fecha_inicio: semana.fechas.split(' - ')[0] || '',
-          fecha_fin: semana.fechas.split(' - ')[1] || '',
-          eje_tematico: semana.eje_tematico,
-          unidad_libro: semana.unidad_libro,
-          horas_json: JSON.stringify(semana.horas || []),
-          kpi: semana.kpi,
-          estado: 'borrador',
-          docente_email: userEmail || '',
-          aprobado_por: '',
-          aprobado_fecha: '',
-        };
-        const res = await guardarPlaneacionSemana(payload);
+        const res = await fetch(`/api/study-plan/S01/weeks/${semana.semana}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fechas: semana.fechas || '',
+            ejeTematico: semana.eje_tematico || '',
+            unidadLibro: semana.unidad_libro || '',
+            paginas: semana.paginas || '',
+            kpi: semana.kpi || '',
+            horasJson: semana.horas || [],
+          }),
+        });
         if (res.ok) successCount++;
       }
-      addLog(`CLOUD SUCCESS: ${successCount}/${mallaCurricularData.length} semanas sincronizadas al Data Lake.`);
+      addLog(`CLOUD SUCCESS: ${successCount}/${mallaCurricularData.length} semanas publicadas en la copia maestra.`);
+      if (successCount > 0) {
+        await refreshMalla();
+        addLog('CLIENT: Malla directiva y panel docente actualizados desde la misma fuente.');
+      }
     } catch (error) {
-      console.error('[DirectorLibrary] Error sync planeación:', error);
-      addLog('❌ CLOUD ERROR: Fallo al sincronizar planeación al Data Lake.');
+      console.error('[DirectorLibrary] Error publicando planeación:', error);
+      addLog('❌ CLOUD ERROR: Fallo al publicar la planeación en la copia maestra.');
     } finally {
       setIsSyncingPlaneacion(false);
     }
@@ -895,6 +779,8 @@ export function DirectorLibrary() {
       <div className="flex flex-wrap bg-black/45 border border-white/5 p-1 rounded-2xl max-w-7xl gap-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.5)] self-start text-left">
         {([
           'Plan de Estudio', 
+          'Plan Maestro',
+           
           'Cargas & Archivos', 
           'Libro Virtual Maestro', 
           'Creador de Exámenes'
@@ -2334,6 +2220,19 @@ export function DirectorLibrary() {
             </div>
           </motion.div>
         )}
+        {/* TAB: PLAN MAESTRO A1+ */}
+        {activeSubTab === 'Plan Maestro' && (
+          <motion.div
+            key="plan_maestro_tab"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            transition={{ duration: 0.2 }}
+          >
+            <DirectorModeloA1Plus />
+          </motion.div>
+        )}
+
       </AnimatePresence>
 
       {/* MODALES - Estructura Reticular & Distribución Académica eliminados */}
