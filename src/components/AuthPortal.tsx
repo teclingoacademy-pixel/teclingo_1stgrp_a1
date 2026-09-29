@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { motion } from 'motion/react';
 import { verificarEmail, registrarUsuario, loginEmail, loginGoogle, finalizarRegistroGoogle, logActividadGlobal, sendWelcomeEmail } from '../services/identityService';
+import { useAppContext } from '../context/AppContext';
 
 type UserRole = 'DIRECTOR' | 'DOCENTE' | 'ALUMNO';
 
@@ -30,6 +31,15 @@ interface GoogleCredentialResponse {
 }
 
 export function AuthPortal({ onLogin }: AuthPortalProps) {
+  /**
+   * AppContext lee `teclingo_user_email` una sola vez al montar. Como este
+   * componente escribe el email solo en localStorage, tras registrarse el
+   * contexto se quedaba con '' y todo lo que consume `userEmail` fallaba:
+   * /api/english-groups/join devolvía 400 "Faltan campos" y
+   * /api/my-english-groups/ pedía un email vacío (404). Se sincroniza el
+   * contexto en cada punto donde se persiste el email.
+   */
+  const { setUserEmail } = useAppContext();
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -78,7 +88,9 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
           return;
         }
         const role = roleFromProfile(resultado.perfil);
-        localStorage.setItem('teclingo_user_email', resultado.perfil.email as string || '');
+        const emailLogin = (resultado.perfil.email as string) || '';
+        localStorage.setItem('teclingo_user_email', emailLogin);
+        setUserEmail(emailLogin);
         localStorage.setItem('teclingo_user_name', resultado.perfil.nombre as string || '');
         logActividadGlobal(resultado.perfil.email as string, 'auth', 'login_google', 'Google SSO exitoso');
         onLoginRef.current(role);
@@ -176,6 +188,7 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
             const role = roleFromProfile(resultado.perfil);
             const nombreFinal = pendingGoogleName || (resultado.perfil.nombre as string) || emailLimpio.split('@')[0];
             localStorage.setItem('teclingo_user_email', emailLimpio);
+            setUserEmail(emailLimpio);
             localStorage.setItem('teclingo_user_name', nombreFinal);
 
             // Si es DIRECTOR y se generó institution_code, guardarlo
@@ -210,6 +223,7 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
         if (resultado.ok && resultado.perfil) {
           const role = roleFromProfile(resultado.perfil);
           localStorage.setItem('teclingo_user_email', emailLimpio);
+            setUserEmail(emailLimpio);
           localStorage.setItem('teclingo_user_name', emailLimpio.split('@')[0]);
 
           // Si es DIRECTOR y se generó institution_code, guardarlo y mostrarlo
@@ -238,6 +252,7 @@ export function AuthPortal({ onLogin }: AuthPortalProps) {
         if (resultado.ok && resultado.perfil) {
           const role = roleFromProfile(resultado.perfil);
           localStorage.setItem('teclingo_user_email', emailLimpio);
+            setUserEmail(emailLimpio);
           localStorage.setItem('teclingo_user_name', (resultado.perfil.nombre as string) || emailLimpio.split('@')[0]);
           logActividadGlobal(emailLimpio, 'auth', 'login_email', 'Login por email exitoso');
           onLogin(role);
