@@ -1602,6 +1602,14 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
             || (teacherData as any).dir_institution_name
             || '';
 
+          // El logo del AppContext solo se llena para el director; alumno y docente
+          // deben tomar el logo de su institución vinculada.
+          const institutionLogoSrc = role === 'DIRECTOR'
+            ? institutionLogo
+            : ((studentData as any).dir_institution_logo
+              || (teacherData as any).dir_institution_logo
+              || institutionLogo);
+
           const nivel    = role === 'ALUMNO' ? studentData.level : role === 'DOCENTE' ? teacherData.degree : undefined;
           const carrera  = role === 'ALUMNO' ? studentData.career : undefined;
           const semestre = role === 'ALUMNO' ? studentData.semestre : undefined;
@@ -1612,7 +1620,7 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
             role,
             roleLabel,
             institutionName,
-            institutionLogo,
+            institutionLogo: institutionLogoSrc,
             institutionCode,
             controlLabel,
             controlValue,
@@ -1642,7 +1650,7 @@ className={`px-3 sm:px-4 py-1.5 sm:py-2 border rounded-lg sm:rounded-xl text-[8p
             modalidad: (instData as any).modalidad,
             institutionName,
             institutionCode,
-            institutionLogoUrl: institutionLogo,
+            institutionLogoUrl: institutionLogoSrc,
             avatarUrl: profile.avatar,
             userId: profile.userId || profile.email,
           });

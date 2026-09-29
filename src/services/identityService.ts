@@ -350,6 +350,30 @@ export interface ObtenerPerfilCompletoArgs {
   rol?: RolUsuario; // si no se pasa, el backend infiere por USUARIOS
 }
 
+// Resuelve el perfil institucional del director vinculado.
+// Primero por email del director; si el vínculo no lo trae, cae al código
+// institucional distribuido (institution_code), que es la vía real de unión.
+async function obtenerDirectorVinculado(
+  directorEmail?: string | null,
+  institutionCode?: string | null
+): Promise<Record<string, any> | null> {
+  try {
+    if (directorEmail) {
+      const r = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(directorEmail)}`);
+      const res = await r.json();
+      if (res?.ok && res.profile) return res.profile;
+    }
+    if (institutionCode) {
+      const r = await fetch(`${LOCAL_API_URL}/api/director-by-code/${encodeURIComponent(institutionCode)}`);
+      const res = await r.json();
+      if (res?.ok && res.profile) return res.profile;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export async function obtenerPerfilCompleto(
   emailOrArgs: string | ObtenerPerfilCompletoArgs
 ): Promise<Record<string, unknown> | null> {
@@ -453,13 +477,11 @@ export async function obtenerPerfilCompleto(
         perfil.modulo_tec = s.moduloTec || '';
         perfil.nivel_ingles = s.nivelIngles || '';
 
-        // Cargar datos del director vinculado
-        if (s.directorEmail) {
+        // Cargar datos del director vinculado (por email o, si falta, por código institucional)
+        if (s.directorEmail || s.institutionCode) {
           try {
-            const dResp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(s.directorEmail)}`);
-            const dRes = await dResp.json();
-            if (dRes?.ok && dRes.profile) {
-              const d = dRes.profile;
+            const d = await obtenerDirectorVinculado(s.directorEmail, s.institutionCode);
+            if (d) {
               perfil.dir_institution_name = d.institutionName || '';
               perfil.dir_institution_type = d.institutionType || '';
               perfil.dir_institution_logo = d.institutionLogo || '';
@@ -484,12 +506,10 @@ export async function obtenerPerfilCompleto(
     }
 
     // 5. Si es DOCENTE, enrichir con datos del director vinculado
-    if (rol === 'DOCENTE' && perfil.director_email) {
+    if (rol === 'DOCENTE' && (perfil.director_email || perfil.institution_code)) {
       try {
-        const dResp = await fetch(`${LOCAL_API_URL}/api/director-profile/${encodeURIComponent(perfil.director_email as string)}`);
-        const dRes = await dResp.json();
-        if (dRes?.ok && dRes.profile) {
-          const d = dRes.profile;
+        const d = await obtenerDirectorVinculado(perfil.director_email as string, perfil.institution_code as string);
+        if (d) {
           perfil.dir_institution_name = d.institutionName || '';
           perfil.dir_institution_type = d.institutionType || '';
           perfil.dir_institution_logo = d.institutionLogo || '';

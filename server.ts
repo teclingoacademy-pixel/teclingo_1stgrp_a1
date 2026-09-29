@@ -80,6 +80,17 @@ async function createUniqueInstitutionCode(): Promise<string> {
   return code!;
 }
 
+// Resuelve el director (y su perfil institucional) a partir del código que se distribuye.
+// Es la vía de vínculo real: el alumno/docente recibe el código, no el email del director.
+async function resolveDirectorByCode(institutionCode?: string | null) {
+  const code = String(institutionCode || "").trim().toUpperCase();
+  if (!code) return null;
+  const dir = await prisma.directorProfile.findUnique({ where: { institutionCode: code } });
+  if (!dir) return null;
+  const dirUser = await prisma.user.findUnique({ where: { id: dir.userId }, select: { email: true } });
+  return { code, directorEmail: dirUser?.email || null, profile: dir };
+}
+
 async function generateIdEmpleado(): Promise<string> {
   const allProfiles = await prisma.teacherProfile.findMany({ select: { idEmpleado: true } });
   let maxNum = 0;
@@ -359,6 +370,7 @@ app.post("/api/users", async (req: Request, res: Response) => {
 
     let institutionCode: string | null = null;
     let idEmpleado: string | null = null;
+    let directorEmail: string | null = null;
     if (mappedRole === "ADMIN") {
       institutionCode = await createUniqueInstitutionCode();
       await prisma.directorProfile.create({
@@ -366,21 +378,26 @@ app.post("/api/users", async (req: Request, res: Response) => {
       });
     } else if (mappedRole === "TEACHER") {
       idEmpleado = await generateIdEmpleado();
-      institutionCode = req.body.institution_code || null;
+      // Resolver el director desde el código distribuido, igual que el login Google.
+      const inst = await resolveDirectorByCode(req.body.institution_code);
+      institutionCode = inst?.code || null;
+      directorEmail = inst?.directorEmail || null;
       await prisma.teacherProfile.create({
-        data: { userId: user.id, idEmpleado, institutionCode },
+        data: { userId: user.id, idEmpleado, institutionCode, directorEmail },
       });
     } else if (mappedRole === "STUDENT") {
-      institutionCode = req.body.institution_code || null;
+      const inst = await resolveDirectorByCode(req.body.institution_code);
+      institutionCode = inst?.code || null;
+      directorEmail = inst?.directorEmail || null;
       await prisma.studentProfile.create({
-        data: { userId: user.id, institutionCode },
+        data: { userId: user.id, institutionCode, directorEmail },
       });
     }
 
     res.status(201).json({
       ok: true,
       code: "registro_ok",
-      perfil: { id: user.id, email: user.email, name: user.name, rol: user.role, institution_code: institutionCode, id_empleado: idEmpleado },
+      perfil: { id: user.id, email: user.email, name: user.name, rol: user.role, institution_code: institutionCode, director_email: directorEmail, id_empleado: idEmpleado },
     });
   } catch (error: any) {
     if (error.code === "P2002") {
@@ -686,6 +703,27 @@ app.get("/api/credential/:email", async (req: Request, res: Response) => {
       }
     }
 
+    // Alumnos y docentes no tienen DirectorProfile propio: se resuelve la institución
+    // del director vinculado (por email del director o, en su defecto, por el código
+    // institucional) para que su credencial salga con el logo y el nombre reales.
+    let dirInstitution = user.directorProfile || null;
+    if (!dirInstitution) {
+      const dirEmail = user.teacherProfile?.directorEmail || user.studentProfile?.directorEmail || null;
+      if (dirEmail) {
+        const dirUser = await prisma.user.findUnique({
+          where: { email: dirEmail.toLowerCase().trim() },
+          include: { directorProfile: true },
+        });
+        dirInstitution = dirUser?.directorProfile || null;
+      }
+      if (!dirInstitution) {
+        const found = await resolveDirectorByCode(
+          user.teacherProfile?.institutionCode || user.studentProfile?.institutionCode,
+        );
+        dirInstitution = found?.profile || null;
+      }
+    }
+
     res.json({
       ok: true,
       credential: {
@@ -694,10 +732,10 @@ app.get("/api/credential/:email", async (req: Request, res: Response) => {
         role: user.role,
         roleLabel: roleMap[user.role] || user.role,
         avatar: user.avatar || null,
-        institutionCode: user.directorProfile?.institutionCode || user.teacherProfile?.institutionCode || user.studentProfile?.institutionCode || null,
-        institutionName: user.directorProfile?.institutionName || null,
-        institutionLogo: user.directorProfile?.institutionLogo || null,
-        slogan: user.directorProfile?.slogan || null,
+        institutionCode: dirInstitution?.institutionCode || user.teacherProfile?.institutionCode || user.studentProfile?.institutionCode || null,
+        institutionName: dirInstitution?.institutionName || null,
+        institutionLogo: dirInstitution?.institutionLogo || null,
+        slogan: dirInstitution?.slogan || null,
         verified: user.role === "ADMIN" || user.role === "TEACHER",
         curp,
         controlNumber,
@@ -841,6 +879,18 @@ app.get("/api/director-profile/:email", async (req: Request, res: Response) => {
     res.json({ ok: true, profile: user.directorProfile || null });
   } catch (error) {
     console.error("Error al obtener perfil director:", error);
+    res.status(500).json({ ok: false, error: "Error interno del servidor" });
+  }
+});
+
+// 11b. Obtener el perfil de Director (institución) a partir del código distribuido
+app.get("/api/director-by-code/:code", async (req: Request, res: Response) => {
+  try {
+    const found = await resolveDirectorByCode(req.params.code);
+    if (!found) return res.status(404).json({ ok: false, error: "Institución no encontrada" });
+    res.json({ ok: true, directorEmail: found.directorEmail, profile: found.profile });
+  } catch (error) {
+    console.error("Error al obtener director por código:", error);
     res.status(500).json({ ok: false, error: "Error interno del servidor" });
   }
 });
