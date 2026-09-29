@@ -18,22 +18,16 @@
 
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import {
+  callOllama,
+  OLLAMA_BASE_URL,
+  OLLAMA_MODEL,
+  OLLAMA_TIMEOUT_MS,
+  type OllamaMessage,
+} from './ollamaClient';
 
 const prisma = new PrismaClient();
 const router = Router();
-
-// process.env del sistema tiene prioridad sobre .env (dotenv no sobreescribe).
-// OVERRIDE_OLLAMA_MODEL/OVERRIDE_OLLAMA_BASE_URL permiten ganar de forma explicita
-// sin tener que editar variables globales de Windows/Linux.
-const OLLAMA_BASE_URL = (
-  process.env.OVERRIDE_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
-).replace(/\/+$/, '');
-// .trim() es necesario: fuentes como `set VAR=valor && cmd` en cmd.exe dejan
-// un espacio final que haria fallar la comparacion contra /api/tags.
-const OLLAMA_MODEL = (
-  process.env.OVERRIDE_OLLAMA_MODEL || process.env.OLLAMA_MODEL || 'llama3.2:3b'
-).trim();
-const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120_000;
 
 /**
  * El mapa de la clase declara slugs con guion bajo (present_simple) y el
@@ -162,35 +156,9 @@ correcta y da un ejemplo corto. No te desvies del tema de la clase.`;
 // ═════════════════════════════════════════════════════════════════
 // Cliente Ollama
 // ═════════════════════════════════════════════════════════════════
-type OllamaMessage = { role: 'system' | 'user' | 'assistant'; content: string };
-
-async function callOllama(messages: OllamaMessage[]): Promise<string> {
-  const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      model: OLLAMA_MODEL,
-      messages,
-      stream: false,
-      options: {
-        temperature: 0.4,
-        num_ctx: 4096,
-        ...(process.env.OLLAMA_NUM_CTX ? { num_ctx: Number(process.env.OLLAMA_NUM_CTX) } : {}),
-      },
-    }),
-    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
-  });
-
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Ollama respondio ${res.status}: ${body.slice(0, 300)}`);
-  }
-
-  const data: any = await res.json();
-  const content = data?.message?.content ?? data?.response ?? '';
-  if (!content) throw new Error('Ollama devolvio una respuesta vacia');
-  return String(content).trim();
-}
+// callOllama y la configuracion viven en api/ollamaClient.ts, compartidos con
+// toolRoutes.ts. Solo queda el normalizador de historial, que es especifico del
+// Teacher Virtual porque trunca el contexto segun la leccion.
 
 /** Normaliza el historial del cliente a mensajes con los roles de Ollama. */
 function normalizeHistory(raw: unknown): OllamaMessage[] {

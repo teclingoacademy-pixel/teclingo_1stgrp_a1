@@ -8,6 +8,7 @@ import cors from "cors";
 import crypto from "crypto";
 import contentRoutes from "./api/contentRoutes";
 import aiRoutes from "./api/aiRoutes";
+import toolRoutes from "./api/toolRoutes";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -51,6 +52,9 @@ app.use(express.json({ limit: "25mb" }));
 // Routers de contenido pedagogico (Prisma -> Postgres) y Teacher Virtual (Ollama).
 app.use("/api", contentRoutes);
 app.use("/api", aiRoutes);
+// Herramientas de IA del alumno (AI Tutor, Grammar Fixer) con Ollama.
+// /api/tts vive mas abajo en este archivo usando edge-tts.
+app.use("/api", toolRoutes);
 
 function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password).digest("hex");
