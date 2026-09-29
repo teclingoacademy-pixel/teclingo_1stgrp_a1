@@ -6,6 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Credenciales del servidor Linux (user/password). No debe subirse nunca.
+SERVER START.txt
 *.mp3
 *.wav
 .vercel/

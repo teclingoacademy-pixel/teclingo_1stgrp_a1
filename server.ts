@@ -32,7 +32,14 @@ const CORS_ORIGINS = [
     .filter(Boolean),
 ];
 
-app.use(helmet());
+// helmet() aplica COOP "same-origin" por defecto, que separa el contexto de
+// navegacion que usa Google Identity Services y bloquea el postMessage con el
+// que Google devuelve la credencial: el boton renderiza pero el login muere al
+// hacer clic. "same-origin-allow-popups" mantiene el aislamiento y abre esa
+// excepcion. No se relaja COEP ni el resto de headers.
+app.use(helmet({
+  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+}));
 app.use(cors({
   origin: (origin, callback) => {
     // Sin Origin = llamadas same-origin, curl o server-to-server.
