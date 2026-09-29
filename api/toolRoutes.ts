@@ -141,37 +141,154 @@ router.post('/grammar/analyze', async (req, res) => {
   }
 });
 
-router.post('/grammar/verify', async (req, res) => {
+// ═════════════════════════════════════════════════════════════════
+// Verificacion de traduccion: determinista, sin LLM
+// ═════════════════════════════════════════════════════════════════
+// Medido contra llama3.2:3b, el LLM diagnosticaba mal un error obvio de
+// tercera persona ("present tense" vs "present simple", que son lo mismo),
+// truncaba la explicacion a media frase y daba scores inestables ante el mismo
+// input (85, 0, 80). Un alumno se creeria ese numero, asi que la calificacion
+// numerica paso a codigo: same token, same result, siempre.
+//
+// El LLM queda fuera del score a proposito. Las explicaciones se generan
+// tambien de forma determinista a partir del diff real, asi que no pueden
+// contradecir la calificacion que acompanian.
+
+/** Contracciones: "I'm" y "I am" son la misma respuesta y no deben penalizarse. */
+const CONTRACTIONS: Array<[RegExp, string]> = [
+  [/\b(\w+)n't\b/g, '$1 not'],
+  [/\bi'm\b/g, 'i am'],
+  [/\byou're\b/g, 'you are'],
+  [/\bhe's\b/g, 'he is'],
+  [/\bshe's\b/g, 'she is'],
+  [/\bit's\b/g, 'it is'],
+  [/\bwe're\b/g, 'we are'],
+  [/\bthey're\b/g, 'they are'],
+  [/\bi've\b/g, 'i have'],
+  [/\bi'll\b/g, 'i will'],
+  [/\bcan't\b/g, 'can not'],
+  [/\bwon't\b/g, 'will not'],
+];
+
+/**
+ * Normaliza para comparar: minusculas, sin acentos, sin puntuacion y con las
+ * contracciones expandidas.
+ *
+ * El orden importa: las contracciones se expanden ANTES de quitar el apostrofo,
+ * porque "I'm" sin apostrofo es "im" y ya no casa con /i'm/. Los acentos se
+ * quitan porque la referencia puede venir de una fuente con distinta
+ * codificacion que lo que el alumno escribe a mano.
+ */
+function normalizeForCompare(str: string): string {
+  let out = String(str ?? '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')       // acentos
+    .replace(/[’]/g, "'");                 // apostrofo tipografico -> recto
+  for (const [re, rep] of CONTRACTIONS) out = out.replace(re, rep);
+  return out
+    .replace(/'/g, '')
+    .replace(/[.,\/#!$%\^&\*;:{}=\-_`~()?"¿¡]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function toTokens(normalized: string): string[] {
+  return normalized ? normalized.split(' ').filter(Boolean) : [];
+}
+
+export interface VerificacionTraduccion {
+  score: number;
+  details: string;
+  isCorrect: boolean;
+  faltantes: string[];
+  sobrantes: string[];
+  ordenIncorrecto: boolean;
+}
+
+/**
+ * Califica por solapamiento de tokens contra la referencia (F1 de precision y
+ * cobertura) y descuenta si las mismas palabras vienen en otro orden.
+ *
+ * No es 0/100 binario a proposito: al alumno que escribio "The child play
+ * football" le falta una -s, no se equivocó en todo. Un 0 lo desmoraliza y
+ * ademas arrastra el promedio de dominio que se ve en el panel.
+ */
+export function verifyTranslation(
+  studentEnglish: string,
+  targetEnglish: string,
+  spanish?: string
+): VerificacionTraduccion {
+  const normStudent = normalizeForCompare(studentEnglish);
+  const normReference = normalizeForCompare(targetEnglish);
+  const studentTokens = toTokens(normStudent);
+  const referenceTokens = toTokens(normReference);
+
+  if (!studentTokens.length) {
+    return {
+      score: 0, isCorrect: false, faltantes: referenceTokens, sobrantes: [],
+      ordenIncorrecto: false, details: 'No escribiste ninguna traducción.',
+    };
+  }
+
+  const faltantes = referenceTokens.filter(t => !studentTokens.includes(t));
+  const sobrantes = studentTokens.filter(t => !referenceTokens.includes(t));
+
+  if (faltantes.length === 0 && sobrantes.length === 0) {
+    const ordenIncorrecto = studentTokens.join(' ') !== referenceTokens.join(' ');
+    const base = `Esperaba: "${targetEnglish}".`;
+    if (ordenIncorrecto) {
+      return {
+        // Mismas palabras, orden equivocado: es un error real de ingles.
+        score: 85, isCorrect: false, faltantes: [], sobrantes: [], ordenIncorrecto: true,
+        details: `Usaste todas las palabras correctas pero en otro orden. ${base}`,
+      };
+    }
+    return {
+      score: 100, isCorrect: true, faltantes: [], sobrantes: [], ordenIncorrecto: false,
+      details: `¡Excelente! Tu traducción coincide con la referencia. ${base}`,
+    };
+  }
+
+  // F1: precision contra la referencia y cobertura de la referencia.
+  const covered = referenceTokens.length - faltantes.length;
+  const precision = covered / studentTokens.length;
+  const recall = covered / referenceTokens.length;
+  const f1 = precision + recall === 0 ? 0 : (2 * precision * recall) / (precision + recall);
+
+  const partes: string[] = [];
+  if (faltantes.length) partes.push(`Falta${faltantes.length > 1 ? 'n' : ''}: ${faltantes.map(w => `"${w}"`).join(', ')}.`);
+  if (sobrantes.length) partes.push(`Sobra${sobrantes.length > 1 ? 'n' : ''}: ${sobrantes.map(w => `"${w}"`).join(', ')}.`);
+  partes.push(`Esperaba: "${targetEnglish}".`);
+  if (spanish) partes.unshift(`Traduciendo "${spanish}":`);
+
+  return {
+    score: clampScore(Math.round(f1 * 100), 0, 0, 100),
+    isCorrect: false,
+    faltantes,
+    sobrantes,
+    ordenIncorrecto: false,
+    details: partes.join(' '),
+  };
+}
+
+router.post('/grammar/verify', (req, res) => {
   const { spanish, studentEnglish, targetEnglish } = req.body || {};
-  if (!studentEnglish || typeof studentEnglish !== 'string') {
+
+  if (!studentEnglish || typeof studentEnglish !== 'string' || !studentEnglish.trim()) {
     return res.status(400).json({ error: 'studentEnglish is required' });
   }
-
-  const prompt = `Evaluate the translation. Spanish: "${spanish ?? ''}". Student: "${studentEnglish}". Reference: "${targetEnglish ?? ''}"`;
-
-  try {
-    const raw = await callOllama([
-      {
-        role: 'system',
-        content: 'You are an evaluator. Respond with JSON: { "score": number (0-100), "details": string }. Only JSON.',
-      },
-      { role: 'user', content: prompt },
-    ], { json: true, temperature: 0.2 });
-
-    const parsed = parseModelJson<{ score?: unknown; details?: string }>(raw);
-    return res.status(200).json({
-      score: clampScore(parsed.score, 70, 0, 100),
-      details: String(parsed.details || 'Revisa la concordancia verbal.').slice(0, 400),
-    });
-  } catch (error: any) {
-    console.error('[grammar/verify] Error Ollama:', error?.message || error);
+  if (!targetEnglish || typeof targetEnglish !== 'string' || !targetEnglish.trim()) {
+    // Sin referencia no hay nada contra que comparar: se responde con la forma
+    // que espera la UI para no romperla.
     return res.status(200).json({
       score: 0,
-      details: 'No se pudo evaluar con el modelo de IA.',
-      fallback: true,
-      detail: error?.message || String(error),
+      details: 'Este ejercicio no tiene una traducción de referencia para comparar.',
     });
   }
+
+  const result = verifyTranslation(studentEnglish, targetEnglish, spanish);
+  return res.status(200).json({ score: result.score, details: result.details });
 });
 
 export default router;
