@@ -471,8 +471,28 @@ app.post("/api/users/google-login", async (req: Request, res: Response) => {
         },
       });
 
-      // ACTUALIZAR el profile correcto con institutionCode si viene en este request
-      if (institutionCode) {
+      let directorCode: string | null = null;
+      let idEmpleado: string | null = null;
+
+      if (newRole === "ADMIN") {
+        // Un director genera su propio código: nunca envía institution_code, así
+        // que antes caía en el `if (institutionCode)` de abajo y el DirectorProfile
+        // quedaba sin crear. El panel terminaba mostrando "sin asignar" y, peor,
+        // sus alumnos no tenían un código válido con el que vincularse.
+        // El código es inmutable una vez emitido, por eso solo se genera si falta.
+        const existingDP = await prisma.directorProfile.findUnique({ where: { userId: updated.id } });
+        if (existingDP?.institutionCode) {
+          directorCode = existingDP.institutionCode;
+        } else {
+          directorCode = await createUniqueInstitutionCode();
+          await prisma.directorProfile.upsert({
+            where: { userId: updated.id },
+            update: { institutionCode: directorCode },
+            create: { userId: updated.id, institutionCode: directorCode },
+          });
+        }
+      } else if (institutionCode) {
+        // Alumnos y docentes sí se vinculan con el código que envía el cliente.
         if (newRole === "STUDENT") {
           await prisma.studentProfile.upsert({
             where: { userId: updated.id },
@@ -481,7 +501,7 @@ app.post("/api/users/google-login", async (req: Request, res: Response) => {
           });
         } else if (newRole === "TEACHER") {
           const existingTP = await prisma.teacherProfile.findUnique({ where: { userId: updated.id } });
-          const idEmpleado = existingTP?.idEmpleado || await generateIdEmpleado();
+          idEmpleado = existingTP?.idEmpleado || await generateIdEmpleado();
           await prisma.teacherProfile.upsert({
             where: { userId: updated.id },
             update: { institutionCode, directorEmail },
@@ -494,7 +514,11 @@ app.post("/api/users/google-login", async (req: Request, res: Response) => {
         ok: true, code: "login_ok",
         perfil: {
           id: updated.id, email: updated.email, name: updated.name, rol: updated.role,
-          institution_code: institutionCode, director_email: directorEmail,
+          // Para el director se devuelve el código persistido. Antes se devolvía el
+          // que envía el cliente, que en su caso es null.
+          institution_code: newRole === "ADMIN" ? directorCode : institutionCode,
+          director_email: directorEmail,
+          id_empleado: idEmpleado,
         },
       });
     }
