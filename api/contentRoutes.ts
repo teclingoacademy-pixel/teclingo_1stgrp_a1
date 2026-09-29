@@ -40,6 +40,17 @@ function fail(res: any, logTag: string, error: unknown) {
   res.status(500).json({ success: false, error: 'Error interno del servidor' });
 }
 
+/**
+ * ClassKnowledgeMap guarda los slugs con guion bajo (present_simple) mientras que
+ * GrammarTopic los cataloga con guion medio (present-simple). Sin normalizar,
+ * la consulta por id nunca cruzaria ambos formatos.
+ *
+ * Debe coincidir con normalizeSlug() de scripts/seed-missing-grammar.mjs.
+ */
+function normalizeSlug(slug: string): string {
+  return String(slug).trim().toLowerCase().replace(/_/g, '-');
+}
+
 // ═════════════════════════════════════════════════════════════════
 // GET /api/content/lessons/:id/full
 // Payload unico con todo el contenido de la clase. Evita que el
@@ -69,13 +80,14 @@ router.get('/content/lessons/:id/full', async (req, res) => {
       return res.status(404).json({ success: false, error: `Leccion no encontrada: ${id}` });
     }
 
-    // ClassKnowledgeMap guarda slugs sueltos (present_simple) que no siempre
-    // coinciden con el id de GrammarTopic (third-person). Se resuelve lo que
-    // exista y se conserva la lista cruda para el frontend.
+    // ClassKnowledgeMap guarda slugs con guion bajo; GrammarTopic los cataloga
+    // con guion medio. Se consulta normalizado y se conserva la lista cruda
+    // para que el frontend pueda referenciar el tema como lo declara la clase.
     const mapTopics = lesson.knowledgeMap?.grammarTopics ?? [];
-    const resolvedTopics = mapTopics.length
+    const normalizedTopics = [...new Set(mapTopics.map(normalizeSlug))];
+    const resolvedTopics = normalizedTopics.length
       ? await prisma.grammarTopic.findMany({
-          where: { id: { in: mapTopics }, active: true },
+          where: { id: { in: normalizedTopics }, active: true },
           orderBy: { order: 'asc' },
           include: { examples: { orderBy: { order: 'asc' } } },
         })
@@ -240,11 +252,17 @@ router.get('/content/grammar/for-lesson/:id', async (req, res) => {
       return res.status(404).json({ success: false, error: `Clase sin mapa de conocimiento: ${id}` });
     }
 
-    const topics = await prisma.grammarTopic.findMany({
-      where: { id: { in: map.grammarTopics }, active: true },
-      orderBy: { order: 'asc' },
-      include: { examples: { orderBy: { order: 'asc' } } },
-    });
+    // La consulta va normalizada (el mapa usa "_" y el catalogo "-"). unresolved
+    // devuelve los slugs tal como los declara la clase, que es la forma en que
+    // el frontend los referencia y puede enviarlos a /api/ai/ask.
+    const declared = map.grammarTopics ?? [];
+    const topics = declared.length
+      ? await prisma.grammarTopic.findMany({
+          where: { id: { in: declared.map(normalizeSlug) }, active: true },
+          orderBy: { order: 'asc' },
+          include: { examples: { orderBy: { order: 'asc' } } },
+        })
+      : [];
 
     const matched = new Set(topics.map((t) => t.id));
     res.json({
@@ -253,7 +271,7 @@ router.get('/content/grammar/for-lesson/:id', async (req, res) => {
         lessonId: id,
         topics,
         vocabTopics: map.vocabTopics,
-        unresolved: map.grammarTopics.filter((slug) => !matched.has(slug)),
+        unresolved: declared.filter((slug) => !matched.has(normalizeSlug(slug))),
       },
     });
   } catch (error) {

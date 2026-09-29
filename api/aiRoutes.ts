@@ -35,6 +35,15 @@ const OLLAMA_MODEL = (
 ).trim();
 const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120_000;
 
+/**
+ * El mapa de la clase declara slugs con guion bajo (present_simple) y el
+ * catalogo los guarda con guion medio (present-simple). Debe coincidir con
+ * normalizeSlug() en api/contentRoutes.ts y scripts/seed-missing-grammar.mjs.
+ */
+function normalizeSlug(slug: string): string {
+  return String(slug).trim().toLowerCase().replace(/_/g, '-');
+}
+
 const MAX_MESSAGE_CHARS = 2_000;
 const MAX_HISTORY = 12;
 const MAX_THEORY_CHARS = 4_000;
@@ -88,16 +97,19 @@ export async function buildLessonContext(lessonId?: string): Promise<LessonConte
     .map((v) => `- ${v.word} = ${v.translation}`)
     .join('\n');
 
-  // Los slugs del mapa suelen diferir del id en GrammarTopic, asi que se
-  // resuelven los que existan y se listan los demas como pistas.
+  // El mapa declara los slugs con guion bajo y el catalogo los usa con guion
+  // medio, asi que la resolucion va normalizada (igual que en contentRoutes y
+  // en scripts/seed-missing-grammar.mjs).
   const slugs = lesson.knowledgeMap?.grammarTopics ?? [];
   const topics = slugs.length
-    ? await prisma.grammarTopic.findMany({ where: { id: { in: slugs }, active: true } })
+    ? await prisma.grammarTopic.findMany({
+        where: { id: { in: slugs.map(normalizeSlug) }, active: true },
+      })
     : [];
   const matched = new Set(topics.map((t) => t.id));
   const grammarTopics = [
     ...topics.map((t) => `- ${t.title} (${t.titleEn}) [MCER ${t.mcer}]: ${t.summary}`),
-    ...slugs.filter((s) => !matched.has(s)).map((s) => `- ${s.replace(/_/g, ' ')} (sin catalogar)`),
+    ...slugs.filter((s) => !matched.has(normalizeSlug(s))).map((s) => `- ${s.replace(/_/g, ' ')} (sin catalogar)`),
   ].join('\n');
 
   const curriculum = lesson.curriculum
