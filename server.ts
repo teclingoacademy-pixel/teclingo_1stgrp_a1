@@ -12,8 +12,38 @@ import aiRoutes from "./api/aiRoutes";
 const prisma = new PrismaClient();
 const app = express();
 
+/**
+ * Orígenes permitidos para CORS.
+ *
+ * Los locales siempre entran. Los de despliegue se declaran en CORS_ORIGINS
+ * (lista separada por comas) porque el dominio de Vercel cambia con cada
+ * preview y no conviene hardcodearlo. Sin esto, el navegador rechaza el
+ * preflight y el login con Google falla con ERR_FAILED.
+ *
+ * Nunca se usa comodín junto a credentials:true: el navegador lo prohíbe.
+ */
+const CORS_ORIGINS = [
+  "http://localhost:5173",
+  "http://localhost:3000",
+  ...(process.env.CORS_ORIGINS || "")
+    .split(",")
+    .map((o) => o.trim().replace(/\/+$/, ""))
+    .filter(Boolean),
+];
+
 app.use(helmet());
-app.use(cors({ origin: ["http://localhost:5173", "http://localhost:3000"], credentials: true }));
+app.use(cors({
+  origin: (origin, callback) => {
+    // Sin Origin = llamadas same-origin, curl o server-to-server.
+    if (!origin) return callback(null, true);
+    if (CORS_ORIGINS.includes(origin)) return callback(null, true);
+    // Se rechaza con 403 en vez de propagar el Error: callback(err) convierte
+    // el fallo en un 500 con stack trace, que no distingue de un error real.
+    console.warn(`[cors] Origin bloqueado: ${origin}`);
+    callback(null, false);
+  },
+  credentials: true,
+}));
 // Límite elevado: las imágenes de la ID Card institucional se envían en base64
 // (una foto de 5 MB pesa ~6.7 MB en base64). Default de Express era 100kb.
 app.use(express.json({ limit: "25mb" }));
