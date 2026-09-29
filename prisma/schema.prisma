@@ -80,6 +80,13 @@ model Lesson {
   texts        TextBase[]
   vocabulary   VocabularyItem[]
   teacherScript TeacherScript?
+  theorySections   LessonTheorySection[]
+  knowledgeMap     ClassKnowledgeMap?
+  contract         LessonContract?
+  curriculum       LessonCurriculum?
+  grammarTips      LessonGrammarTip[]
+  quickVocab       LessonQuickVocab[]
+  mallaWeeks       MallaWeek[]           @relation("MallaWeekLessons")
 
   @@index([weekId])
   videoUrl        String?
@@ -609,5 +616,240 @@ model TeacherScript {
   updatedAt DateTime @updatedAt
   lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
+  @@index([lessonId])
+}
+
+// ===================================================================
+// BASE DE CONOCIMIENTOS PEDAGOGICA — V4
+// Todo el contenido pedagogico vive aqui. El frontend NO contiene
+// contenido pedagogico: solo lo consume via /api/knowledge/*
+// ===================================================================
+
+/// Secciones de teoria del acordeon de clase (ClassTheoryAccordion)
+model LessonTheorySection {
+  id        String   @id @default(uuid())
+  lessonId  String
+  order     Int
+  title     String
+  text      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, order])
+  @@index([lessonId])
+}
+
+/// Guia rapida por habilidad (modales tutoriales de reactivo)
+model SkillTutorial {
+  id              String   @id @default(uuid())
+  skill           Skill    @unique
+  eyebrow         String
+  title           String
+  explanationText String
+  keyPoints       Json
+  storageKey      String   @unique
+  lang            String   @default("es-MX")
+  rate            Float    @default(0.92)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+/// Biblioteca de gramatica (AITutor / GrammarFixer)
+model GrammarTopic {
+  id          String   @id
+  title       String
+  titleEn     String
+  mcer        String
+  category    String
+  summary     String
+  explanation String
+  structure   String
+  keywords    String[] @default([])
+  order       Int      @default(0)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  examples    GrammarExample[]
+
+  @@index([mcer])
+  @@index([category])
+}
+
+model GrammarExample {
+  id      String       @id @default(uuid())
+  topicId String
+  order   Int          @default(0)
+  en      String
+  es      String
+  note    String?
+  topic   GrammarTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
+
+  @@index([topicId])
+}
+
+/// Mapa clase -> temas de gramatica y vocabulario (AI Tutor)
+model ClassKnowledgeMap {
+  lessonId      String   @id
+  grammarTopics String[] @default([])
+  vocabTopics   String[] @default([])
+  updatedAt     DateTime @updatedAt
+  lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+/// Malla pedagogica: semana -> lecciones (ProgressMap del alumno)
+model MallaWeek {
+  id            String   @id @default(uuid())
+  levelCode     String
+  weekNumber    Int
+  phase         String?
+  lessonIds     String[] @default([])
+  isExamWeek    Boolean  @default(false)
+  isClosingWeek Boolean  @default(false)
+  title         String?
+  shortTitle    String?
+  mcer          String?
+  grammarFocus  String?
+  lessons       Lesson[] @relation("MallaWeekLessons")
+
+  @@unique([levelCode, weekNumber])
+  @@index([levelCode])
+}
+
+/// Fases del curso A1+ (coursePhasesA1Plus)
+model CoursePhase {
+  id          String @id @default(uuid())
+  code        String @unique
+  order       Int
+  name        String
+  description String
+  weekFrom    Int
+  weekTo      Int
+  block       Int
+  mcer        String
+}
+
+/// Curriculum por semestre (panel del Director)
+model ProgramSemester {
+  id      String          @id @default(uuid())
+  code    String          @unique // "Semestre 01"
+  name    String
+  order   Int
+  cefrTag String
+  skills  SemesterSkill[]
+}
+
+model SemesterSkill {
+  id            String          @id @default(uuid())
+  semesterCode  String
+  skill         String
+  order         Int             @default(0)
+  name          String
+  englishName   String
+  iconKey       String
+  kpi           String
+  accreditation String
+  description   String
+  semester      ProgramSemester @relation(fields: [semesterCode], references: [code], onDelete: Cascade)
+
+  @@unique([semesterCode, skill])
+  @@index([semesterCode])
+}
+
+/// Referencia MCER A1+ — Modelo de Produccion Final
+model ProductionModelText {
+  id      String @id
+  profile String
+  title   String
+  theme   String
+  text    String
+  order   Int    @default(0)
+}
+
+/// Bloques gramaticales del modelo de produccion
+model GrammarBlock {
+  id         String   @id @default(uuid())
+  number     Int      @unique
+  name       String
+  purpose    String
+  mcer       String
+  structures String[] @default([])
+}
+
+/// Matriz estructura -> bloque / textos modelo
+model GrammarStructure {
+  id        String  @id @default(uuid())
+  structure String  @unique
+  block     Int
+  mcer      String
+  t1        Boolean @default(false)
+  t2        Boolean @default(false)
+  t3        Boolean @default(false)
+}
+
+/// Bloques de vocabulario (contrato de leccion y modelo de produccion)
+model VocabBlock {
+  id     String   @id
+  source String // "production" | "contract"
+  label  String
+  words  String[] @default([])
+
+  @@index([source])
+}
+
+/// Contrato leccion <-> texto <-> vocabulario <-> estructura
+model LessonContract {
+  id           String   @id @default(uuid())
+  lessonId     String   @unique
+  profile      String
+  fragment     String
+  anchorPhrase String
+  vocabBlock   Int
+  matrixRows   Int[]    @default([])
+  vocabExtra   String[] @default([])
+  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+}
+
+/// Detalle curricular por clase (ficha de video / foco pedagogico)
+model LessonCurriculum {
+  id              String   @id @default(uuid())
+  lessonId        String   @unique
+  order           Int      @default(0)
+  classCode       String
+  topic           String
+  description     String
+  level           String
+  grammarFocus    String
+  vocabFocus      String[] @default([])
+  keyStructures   String[] @default([])
+  suggestedPrompt String
+  lesson          Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+}
+
+/// Tip / nota gramatical de la leccion ("LA REGLA DE ORO")
+model LessonGrammarTip {
+  id            String   @id @default(uuid())
+  lessonId      String
+  title         String
+  rule          String
+  commonMistake String?
+  examples      Json
+  lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@index([lessonId])
+}
+
+/// Vocabulario rapido destacado de la leccion
+model LessonQuickVocab {
+  id          String @id @default(uuid())
+  lessonId    String
+  order       Int
+  word        String
+  translation String
+  lesson      Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  @@unique([lessonId, order])
   @@index([lessonId])
 }

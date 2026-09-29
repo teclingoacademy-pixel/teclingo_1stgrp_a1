@@ -8,6 +8,8 @@ interface ReadingGrammarTutorialModalProps {
 }
 
 export const READING_GRAMMAR_TUTORIAL_STORAGE_KEY = 'reading_grammar_tutorial_seen';
+export const explanationText =
+  'Lee el texto de arriba y completa la oración seleccionando la palabra correcta. Tienes 2 oportunidades para responder.';
 
 export const ReadingGrammarTutorialModal: React.FC<ReadingGrammarTutorialModalProps> = ({
   isOpen,
@@ -16,8 +18,6 @@ export const ReadingGrammarTutorialModal: React.FC<ReadingGrammarTutorialModalPr
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  const explanationText =
-    'Lee el texto de arriba y completa la oración seleccionando la palabra correcta. Tienes 2 oportunidades para responder.';
 
   // Audio extendido con saludo amigable para el TTS en español
   const audioSpeechText =

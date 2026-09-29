@@ -8,6 +8,8 @@ interface WritingTutorialModalProps {
 }
 
 export const WRITING_TUTORIAL_STORAGE_KEY = 'writing_tutorial_seen';
+export const explanationText =
+  'Lee la instrucción en español, escucha la pronunciación en inglés con el botón de audio y escribe la respuesta correcta en el campo de texto. Tienes 2 oportunidades para responder.';
 
 export const WritingTutorialModal: React.FC<WritingTutorialModalProps> = ({
   isOpen,
@@ -16,8 +18,6 @@ export const WritingTutorialModal: React.FC<WritingTutorialModalProps> = ({
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  const explanationText =
-    'Lee la instrucción en español, escucha la pronunciación en inglés con el botón de audio y escribe la respuesta correcta en el campo de texto. Tienes 2 oportunidades para responder.';
 
   const audioSpeechText =
     '¡Bienvenido al reto de Dictado Interactivo en Writing! Lee el enunciado en español y presiona el botón de audio para escuchar la palabra en inglés. Luego, escribe la respuesta en el campo de texto y haz clic en Comprobar o presiona Enter. Tienes dos oportunidades para responder correctamente. ¡Mucho éxito!';

@@ -8,6 +8,8 @@ interface ListeningTutorialModalProps {
 }
 
 export const LISTENING_TUTORIAL_STORAGE_KEY = 'listening_tutorial_seen';
+export const explanationText =
+  'Escucha la oración completa con el botón de audio y selecciona la palabra que completa el espacio en blanco (___). Tienes 2 oportunidades para responder.';
 
 export const ListeningTutorialModal: React.FC<ListeningTutorialModalProps> = ({
   isOpen,
@@ -16,8 +18,6 @@ export const ListeningTutorialModal: React.FC<ListeningTutorialModalProps> = ({
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  const explanationText =
-    'Escucha la oración completa con el botón de audio y selecciona la palabra que completa el espacio en blanco (___). Tienes 2 oportunidades para responder.';
 
   const audioSpeechText =
     '¡Bienvenido al reto Listening Cloze! Escucha con atención la oración completa usando el botón de audio y selecciona la palabra correcta que completa el espacio en blanco. Tienes dos oportunidades para responder correctamente. ¡Mucho éxito!';

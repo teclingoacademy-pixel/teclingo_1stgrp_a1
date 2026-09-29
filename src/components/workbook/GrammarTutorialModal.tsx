@@ -8,6 +8,9 @@ interface GrammarTutorialModalProps {
 }
 
 export const GRAMMAR_TUTORIAL_STORAGE_KEY = 'grammar_tutorial_seen';
+export const TUTORIAL_TEXT = '¡Bienvenido! En este ejercicio debes seleccionar la respuesta correcta. Tienes 2 oportunidades para responder. Si necesitas ayuda, puedes usar el botón de audio para escuchar la frase completa. ¡Mucho éxito!';
+export const TUTORIAL_EYEBROW = 'Guía Rápida · Ejercicios de Grammar';
+export const TUTORIAL_TITLE = '¿Cómo funciona este ejercicio?';
 
 export const GrammarTutorialModal: React.FC<GrammarTutorialModalProps> = ({ isOpen, onClose }) => {
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(false);

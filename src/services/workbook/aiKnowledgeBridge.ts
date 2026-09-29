@@ -23,7 +23,7 @@ export interface AIContext {
 }
 
 // Known grammar topics per class (from curriculum)
-const CLASS_GRAMMAR_MAP: Record<string, string[]> = {
+export const CLASS_GRAMMAR_MAP: Record<string, string[]> = {
   'A1_C01': ['present_simple', 'personal_pronouns', 'be_verb'],
   'A1_C02': ['demonstratives', 'there_is_there_are', 'prepositions'],
   'A1_C03': ['present_continuous', 'question_words', 'articles'],
@@ -39,7 +39,7 @@ const CLASS_GRAMMAR_MAP: Record<string, string[]> = {
 };
 
 // Known vocabulary topics per class
-const CLASS_VOCAB_MAP: Record<string, string[]> = {
+export const CLASS_VOCAB_MAP: Record<string, string[]> = {
   'A1_C01': ['greetings', 'introductions', 'countries', 'nationalities'],
   'A1_C02': ['classroom_objects', 'school_supplies', 'demonstratives'],
   'A1_C03': ['daily_routines', 'house_rooms', 'present_continuous'],

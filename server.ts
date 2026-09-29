@@ -1,9 +1,13 @@
+// Debe ir primero: los routers leen process.env (OLLAMA_*) al evaluarse.
+import 'dotenv/config';
 import express, { Request, Response } from "express";
 import { PrismaClient, Prisma } from '@prisma/client';
 import { Communicate } from 'edge-tts-universal';
 import helmet from "helmet";
 import cors from "cors";
 import crypto from "crypto";
+import contentRoutes from "./api/contentRoutes";
+import aiRoutes from "./api/aiRoutes";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -13,6 +17,10 @@ app.use(cors({ origin: ["http://localhost:5173", "http://localhost:3000"], crede
 // Límite elevado: las imágenes de la ID Card institucional se envían en base64
 // (una foto de 5 MB pesa ~6.7 MB en base64). Default de Express era 100kb.
 app.use(express.json({ limit: "25mb" }));
+
+// Routers de contenido pedagogico (Prisma -> Postgres) y Teacher Virtual (Ollama).
+app.use("/api", contentRoutes);
+app.use("/api", aiRoutes);
 
 function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password).digest("hex");

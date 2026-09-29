@@ -1,0 +1,309 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * aiRoutes.ts
+ * Teacher Virtual / AI Tutor con RAG sobre el contenido de Postgres.
+ *
+ * El contexto (teoria, guion, tips, vocabulario, tema de gramatica) se arma
+ * desde la BD segun la leccion activa y se inyecta en el prompt. Ollama corre
+ * como proveedor LLM local: en desarrollo apunta al servidor Debian por IP,
+ * en produccion a localhost.
+ *
+ * Rutas:
+ *   POST /api/ai/ask              -> respuesta del tutor con contexto de la leccion
+ *   GET  /api/ai/teacher-context   -> contexto crudo (debug / inspeccion)
+ *   GET  /api/ai/health           -> estado de Ollama y modelo cargado
+ */
+
+import { Router } from 'express';
+import { PrismaClient } from '@prisma/client';
+
+const prisma = new PrismaClient();
+const router = Router();
+
+// process.env del sistema tiene prioridad sobre .env (dotenv no sobreescribe).
+// OVERRIDE_OLLAMA_MODEL/OVERRIDE_OLLAMA_BASE_URL permiten ganar de forma explicita
+// sin tener que editar variables globales de Windows/Linux.
+const OLLAMA_BASE_URL = (
+  process.env.OVERRIDE_OLLAMA_BASE_URL || process.env.OLLAMA_BASE_URL || 'http://localhost:11434'
+).replace(/\/+$/, '');
+// .trim() es necesario: fuentes como `set VAR=valor && cmd` en cmd.exe dejan
+// un espacio final que haria fallar la comparacion contra /api/tags.
+const OLLAMA_MODEL = (
+  process.env.OVERRIDE_OLLAMA_MODEL || process.env.OLLAMA_MODEL || 'llama3.2:3b'
+).trim();
+const OLLAMA_TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 120_000;
+
+const MAX_MESSAGE_CHARS = 2_000;
+const MAX_HISTORY = 12;
+const MAX_THEORY_CHARS = 4_000;
+const MAX_SCRIPT_CHARS = 2_500;
+
+// ═════════════════════════════════════════════════════════════════
+// Contexto pedagogico de una leccion
+// ═════════════════════════════════════════════════════════════════
+export type LessonContext = {
+  lessonId: string | null;
+  title: string;
+  theory: string;
+  teacherScript: string;
+  grammarTips: string;
+  vocabulary: string;
+  grammarTopics: string;
+  curriculum: string;
+  found: boolean;
+};
+
+export async function buildLessonContext(lessonId?: string): Promise<LessonContext> {
+  const empty: LessonContext = {
+    lessonId: null, title: '', theory: '', teacherScript: '',
+    grammarTips: '', vocabulary: '', grammarTopics: '', curriculum: '', found: false,
+  };
+  if (!lessonId) return empty;
+
+  const lesson = await prisma.lesson.findUnique({
+    where: { id: lessonId },
+    include: {
+      theorySections: { orderBy: { order: 'asc' } },
+      teacherScript: true,
+      grammarTips: true,
+      quickVocab: { orderBy: { order: 'asc' } },
+      knowledgeMap: true,
+      curriculum: true,
+    },
+  });
+  if (!lesson) return empty;
+
+  const theory = lesson.theorySections
+    .map((s) => `### ${s.title}\n${s.text}`)
+    .join('\n\n')
+    .slice(0, MAX_THEORY_CHARS);
+
+  const grammarTips = lesson.grammarTips
+    .map((t) => `- ${t.title}: ${t.rule}${t.commonMistake ? ` (error comun: ${t.commonMistake})` : ''}`)
+    .join('\n');
+
+  const vocabulary = lesson.quickVocab
+    .map((v) => `- ${v.word} = ${v.translation}`)
+    .join('\n');
+
+  // Los slugs del mapa suelen diferir del id en GrammarTopic, asi que se
+  // resuelven los que existan y se listan los demas como pistas.
+  const slugs = lesson.knowledgeMap?.grammarTopics ?? [];
+  const topics = slugs.length
+    ? await prisma.grammarTopic.findMany({ where: { id: { in: slugs }, active: true } })
+    : [];
+  const matched = new Set(topics.map((t) => t.id));
+  const grammarTopics = [
+    ...topics.map((t) => `- ${t.title} (${t.titleEn}) [MCER ${t.mcer}]: ${t.summary}`),
+    ...slugs.filter((s) => !matched.has(s)).map((s) => `- ${s.replace(/_/g, ' ')} (sin catalogar)`),
+  ].join('\n');
+
+  const curriculum = lesson.curriculum
+    ? `Tema: ${lesson.curriculum.topic}. Enfoque gramatical: ${lesson.curriculum.grammarFocus}. Vocabulario clave: ${lesson.curriculum.vocabFocus.join(', ')}.`
+    : '';
+
+  return {
+    lessonId: lesson.id,
+    title: lesson.title,
+    theory,
+    teacherScript: (lesson.teacherScript?.content ?? '').slice(0, MAX_SCRIPT_CHARS),
+    grammarTips,
+    vocabulary,
+    grammarTopics,
+    curriculum,
+    found: true,
+  };
+}
+
+function buildSystemPrompt(ctx: LessonContext, level: string, mode: string): string {
+  const isTeacher = mode === 'teacher';
+
+  const persona = isTeacher
+    ? `Eres el Teacher Virtual de TECLINGO, un profesor de ingles con experiencia en nivel ${level}.
+Tu alumno te hace una pregunta sobre la clase. Explica con claridad, usa ejemplos propios
+y cierra con una comprobacion breve de que lo entendio. Responde en español y da la forma
+inglesa cuando sea relevante.`
+    : `Eres el tutor de ingles de TECLINGO para nivel ${level}.
+Ayudas al alumno a practicar. Responde en español, incluye la construccion inglesa
+correcta y da un ejemplo corto. No te desvies del tema de la clase.`;
+
+  const blocks: string[] = [persona, ''];
+
+  if (ctx.found) {
+    blocks.push(`# CONTEXTO DE LA CLASE ACTUAL (${ctx.lessonId}: ${ctx.title})`, '');
+    if (ctx.curriculum) blocks.push(ctx.curriculum);
+    if (ctx.theory) blocks.push('## Teoria', ctx.theory);
+    if (ctx.grammarTopics) blocks.push('## Temas de gramatica', ctx.grammarTopics);
+    if (ctx.grammarTips) blocks.push('## Tips rapidos', ctx.grammarTips);
+    if (ctx.vocabulary) blocks.push('## Vocabulario de la clase', ctx.vocabulary);
+    if (ctx.teacherScript) blocks.push('## Guion del profesor (referencia de tono)', ctx.teacherScript);
+    blocks.push('', 'Usa este contexto como fuente de verdad. Si la duda queda fuera de el, dilo y responde con lo que sepas del nivel ' + level + '.');
+  } else {
+    blocks.push(`No hay contexto de clase cargado para "${ctx.lessonId ?? 'sin clase'}". Responde con conocimiento general de nivel ${level}.`);
+  }
+
+  return blocks.join('\n');
+}
+
+// ═════════════════════════════════════════════════════════════════
+// Cliente Ollama
+// ═════════════════════════════════════════════════════════════════
+type OllamaMessage = { role: 'system' | 'user' | 'assistant'; content: string };
+
+async function callOllama(messages: OllamaMessage[]): Promise<string> {
+  const res = await fetch(`${OLLAMA_BASE_URL}/api/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: OLLAMA_MODEL,
+      messages,
+      stream: false,
+      options: {
+        temperature: 0.4,
+        num_ctx: 4096,
+        ...(process.env.OLLAMA_NUM_CTX ? { num_ctx: Number(process.env.OLLAMA_NUM_CTX) } : {}),
+      },
+    }),
+    signal: AbortSignal.timeout(OLLAMA_TIMEOUT_MS),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Ollama respondio ${res.status}: ${body.slice(0, 300)}`);
+  }
+
+  const data: any = await res.json();
+  const content = data?.message?.content ?? data?.response ?? '';
+  if (!content) throw new Error('Ollama devolvio una respuesta vacia');
+  return String(content).trim();
+}
+
+/** Normaliza el historial del cliente a mensajes con los roles de Ollama. */
+function normalizeHistory(raw: unknown): OllamaMessage[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .slice(-MAX_HISTORY)
+    .map((h: any) => {
+      const role = h?.role === 'assistant' ? 'assistant' : 'user';
+      // El frontend historico manda { role, parts: [{ text }] }.
+      const text = typeof h?.content === 'string'
+        ? h.content
+        : Array.isArray(h?.parts)
+          ? h.parts.map((p: any) => p?.text ?? '').join(' ').trim()
+          : '';
+      return text ? { role, content: text } : null;
+    })
+    .filter((m): m is OllamaMessage => m !== null);
+}
+
+// ═════════════════════════════════════════════════════════════════
+// POST /api/ai/ask
+// ═════════════════════════════════════════════════════════════════
+router.post('/ai/ask', async (req, res) => {
+  const { message, lessonId, history, mode, level } = req.body || {};
+
+  if (typeof message !== 'string' || !message.trim()) {
+    return res.status(400).json({ success: false, error: 'message requerido' });
+  }
+  const question = message.trim().slice(0, MAX_MESSAGE_CHARS);
+
+  try {
+    const ctx = await buildLessonContext(
+      typeof lessonId === 'string' && lessonId.trim() ? lessonId.trim() : undefined,
+    );
+
+    const system = buildSystemPrompt(ctx, String(level || 'A1'), String(mode || 'tutor'));
+    const messages: OllamaMessage[] = [
+      { role: 'system', content: system },
+      ...normalizeHistory(history),
+      { role: 'user', content: question },
+    ];
+
+    const answer = await callOllama(messages);
+
+    res.json({
+      success: true,
+      data: {
+        content: answer,
+        model: OLLAMA_MODEL,
+        context: { lessonId: ctx.lessonId, lessonTitle: ctx.title, found: ctx.found },
+      },
+    });
+  } catch (error) {
+    const isOllamaDown =
+      error instanceof Error &&
+      (error.name === 'TimeoutError' || /fetch failed|ECONNREFUSED|ETIMEDOUT/i.test(error.message));
+
+    if (isOllamaDown) {
+      console.warn('[ai/ask] Ollama no disponible:', error);
+      return res.status(503).json({
+        success: false,
+        error: 'El servicio de IA no esta disponible en este momento',
+        detail: { baseUrl: OLLAMA_BASE_URL, model: OLLAMA_MODEL },
+      });
+    }
+
+    console.error('[ai/ask] error:', error);
+    res.status(500).json({ success: false, error: 'Error interno del servidor' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+// GET /api/ai/teacher-context?lessonId=N1-C01
+// ═════════════════════════════════════════════════════════════════
+router.get('/ai/teacher-context', async (req, res) => {
+  try {
+    const lessonId = String(req.query.lessonId || '').trim();
+    if (!lessonId) {
+      return res.status(400).json({ success: false, error: 'lessonId requerido' });
+    }
+    const ctx = await buildLessonContext(lessonId);
+    if (!ctx.found) {
+      return res.status(404).json({ success: false, error: `Leccion no encontrada: ${lessonId}` });
+    }
+    res.json({ success: true, data: ctx });
+  } catch (error) {
+    console.error('[ai/teacher-context] error:', error);
+    res.status(500).json({ success: false, error: 'Error interno del servidor' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+// GET /api/ai/health
+// ═════════════════════════════════════════════════════════════════
+router.get('/ai/health', async (_req, res) => {
+  try {
+    const res2 = await fetch(`${OLLAMA_BASE_URL}/api/tags`, { signal: AbortSignal.timeout(5_000) });
+    if (!res2.ok) {
+      return res.status(503).json({
+        success: false, ollama: { reachable: false, baseUrl: OLLAMA_BASE_URL, error: `HTTP ${res2.status}` },
+      });
+    }
+    const data: any = await res2.json();
+    const models: string[] = (data?.models ?? []).map((m: any) => m?.name).filter(Boolean);
+    res.json({
+      success: true,
+      ollama: {
+        reachable: true,
+        baseUrl: OLLAMA_BASE_URL,
+        configuredModel: OLLAMA_MODEL,
+        modelLoaded: models.some((m) => m === OLLAMA_MODEL || m.startsWith(`${OLLAMA_MODEL}:`)),
+        availableModels: models,
+      },
+    });
+  } catch (error) {
+    res.status(503).json({
+      success: false,
+      ollama: {
+        reachable: false,
+        baseUrl: OLLAMA_BASE_URL,
+        configuredModel: OLLAMA_MODEL,
+        error: error instanceof Error ? error.message : 'Error desconocido',
+      },
+    });
+  }
+});
+
+export default router;

@@ -40,7 +40,7 @@ interface TeacherVirtualCardProps {
 }
 
 // Script de Audio Profesional sugerido por la pedagogía de TecLingo para N1-C01
-const A1_C01_AUDIO_SCRIPT = `Bienvenidos a la Fase Cero de TecLingo. Hoy vamos a construir los cimientos de tu aprendizaje del inglés.
+export const A1_C01_AUDIO_SCRIPT = `Bienvenidos a la Fase Cero de TecLingo. Hoy vamos a construir los cimientos de tu aprendizaje del inglés.
 
 Para construir una base lingüística sólida y evitar errores sistemáticos de traducción, es indispensable dominar la estructura de los sujetos antes de introducir cualquier verbo o regla gramatical compleja.
 
@@ -85,7 +85,7 @@ Excelente. Ahora dominas los fundamentos de cantidad y clasificación de sujetos
 // GUIONES DE AUDIO DEL TEACHER — por leccion
 // Regla: conceptos en español, ejemplos en inglés entre comillas.
 // ===================================================================
-const LESSON_AUDIO_SCRIPTS: Record<string, string> = {
+export const LESSON_AUDIO_SCRIPTS: Record<string, string> = {
   'N1-C01': A1_C01_AUDIO_SCRIPT,
 
   'N1-C00': `Bienvenidos a la Fase Cero de TecLingo. Hoy vamos a construir los cimientos: singular y plural en inglés.

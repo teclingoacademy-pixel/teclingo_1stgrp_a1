@@ -8,6 +8,8 @@ interface SpeakingTutorialModalProps {
 }
 
 export const SPEAKING_TUTORIAL_STORAGE_KEY = 'speaking_tutorial_seen';
+export const explanationText =
+  'Lee la frase en voz alta usando tu micrófono. Puedes escuchar la pronunciación modelo antes de grabar. Tienes 2 oportunidades para pronunciar correctamente.';
 
 export const SpeakingTutorialModal: React.FC<SpeakingTutorialModalProps> = ({
   isOpen,
@@ -16,8 +18,6 @@ export const SpeakingTutorialModal: React.FC<SpeakingTutorialModalProps> = ({
   const [dontShowAgain, setDontShowAgain] = useState<boolean>(false);
   const [isPlayingAudio, setIsPlayingAudio] = useState<boolean>(false);
 
-  const explanationText =
-    'Lee la frase en voz alta usando tu micrófono. Puedes escuchar la pronunciación modelo antes de grabar. Tienes 2 oportunidades para pronunciar correctamente.';
 
   const audioSpeechText =
     '¡Bienvenido al reto de Speaking! En este ejercicio practicarás tu pronunciación oral leyendo la frase en voz alta. Puedes presionar Escuchar pronunciación para oír cómo suena la oración correcta antes de hablar. Luego, presiona el botón del micrófono para grabar tu voz. Tienes dos oportunidades para completar cada reto. ¡Mucho éxito!';

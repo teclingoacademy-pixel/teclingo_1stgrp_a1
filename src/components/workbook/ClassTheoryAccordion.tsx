@@ -7,7 +7,7 @@ interface ClassTheoryAccordionProps {
   claseId: string;
 }
 
-const SECTION_SCRIPTS: Record<number, { title: string; text: string }> = {
+export const SECTION_SCRIPTS: Record<number, { title: string; text: string }> = {
   1: {
     title: '1. Singular vs. Plural',
     text: 'Sección uno. Singular versus Plural. El primer paso para pensar en inglés consiste en clasificar todo elemento del entorno según su número gramatical. Singular se refiere estrictamente a una sola entidad: student, book, teacher. Plural representa a dos o más entidades. La regla general es añadir s o es: students, books, teachers.',

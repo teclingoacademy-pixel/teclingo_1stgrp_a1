@@ -19,6 +19,26 @@ interface ProgressMapProps {
 
 type NodeStatus = 'COMPLETED' | 'CURRENT' | 'LOCKED';
 
+export const WEEK_TO_LESSONS: Record<number, string[]> = {
+  1:  ['N1-C00', 'N1-C01'],
+  2:  ['N1-C02', 'N1-C03'],
+  3:  ['N1-C04', 'N1-C05'],
+  4:  [],
+  5:  ['N1-C06', 'N1-C07'],
+  6:  ['N1-C08', 'N1-C09'],
+  7:  ['N1-C10', 'N1-C11'],
+  8:  [],
+  9:  ['N1-C12', 'N1-C13'],
+  10: ['N1-C14', 'N1-C15'],
+  11: ['N1-C16', 'N1-C17'],
+  12: ['N1-C18', 'N1-C19'],
+  13: ['N1-C20', 'N1-C21'],
+  14: ['N1-C25', 'N1-C26'],
+  15: ['N1-C28', 'N1-C29'],
+};
+export const EXAM_WEEKS = [4, 8, 14];
+export const CLOSING_WEEK = 15;
+
 export function ProgressMap({ studentEmail, currentWeek: propCurrentWeek, onBackToPDP, onSelectClass }: ProgressMapProps) {
   const { currentWeek: derivedWeek, overallPercent, completedWeeks, data } = useStudentProgress(studentEmail);
   const { weeks: apiWeeks, loading: weeksLoading } = useStudyPlan('S01');
@@ -51,26 +71,6 @@ export function ProgressMap({ studentEmail, currentWeek: propCurrentWeek, onBack
   }, [currentWeek]);
 
   // FIX 2026-09-28: IDs migrados a N1-CXX. Mapeo real de semana → lecciones.
-  const WEEK_TO_LESSONS: Record<number, string[]> = {
-    1:  ['N1-C00', 'N1-C01'],
-    2:  ['N1-C02', 'N1-C03'],
-    3:  ['N1-C04', 'N1-C05'],
-    4:  [],
-    5:  ['N1-C06', 'N1-C07'],
-    6:  ['N1-C08', 'N1-C09'],
-    7:  ['N1-C10', 'N1-C11'],
-    8:  [],
-    9:  ['N1-C12', 'N1-C13'],
-    10: ['N1-C14', 'N1-C15'],
-    11: ['N1-C16', 'N1-C17'],
-    12: ['N1-C18', 'N1-C19'],
-    13: ['N1-C20', 'N1-C21'],
-    14: ['N1-C25', 'N1-C26'],
-    15: ['N1-C28', 'N1-C29'],
-  };
-  const EXAM_WEEKS = [4, 8, 14];
-  const CLOSING_WEEK = 15;
-
   const getProgress = (weekNum: number): number => {
     const lessons = WEEK_TO_LESSONS[weekNum] || [];
     if (lessons.length === 0) return 0;
