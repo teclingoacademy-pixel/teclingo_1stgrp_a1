@@ -475,4 +475,163 @@ router.get('/content/bootstrap', async (_req, res) => {
   }
 });
 
+// ═════════════════════════════════════════════════════════════════
+// GET /api/v1/textos-base?clase_id=A1_C01
+// Texto base de lectura, servido desde Postgres (modelo TextBase).
+//
+// El frontend tiene cuatro consumidores legacy que esperan convenciones
+// distintas, asi que el payload se devuelve con `data` Y `texto`, y con los
+// nombres en snake_case (contrato de Sheets) junto a los de Prisma. Asi
+// ninguno de ellos cae a datos empaquetados en el bundle.
+// ═════════════════════════════════════════════════════════════════
+router.get('/v1/textos-base', async (req, res) => {
+  const claseId = String(req.query.clase_id ?? '').trim();
+  if (!claseId) {
+    return res.status(400).json({ success: false, error: 'Falta el parametro clase_id' });
+  }
+
+  try {
+    const text = await prisma.textBase.findFirst({
+      where: { lessonId: claseId, active: true },
+      orderBy: { updatedAt: 'desc' },
+    });
+
+    if (!text) {
+      return res.json({
+        success: true,
+        data: null,
+        texto: null,
+        clase_id: claseId,
+        found: false,
+      });
+    }
+
+    const words = text.wordCount || text.content.trim().split(/\s+/).filter(Boolean).length;
+
+    const payload = {
+      clase_id: claseId,
+      lesson_id: text.lessonId,
+      texto_id: text.id,
+
+      titulo_texto: text.title,
+      titulo: text.title,
+      contenido_texto: text.content,
+      contenido: text.content,
+
+      word_count: words,
+      palabras_count: words,
+      difficulty: text.difficulty,
+      estimated_sec: text.timeAudioSec,
+      tiempo_audio_seg: text.timeAudioSec,
+      audio_tts_url: '',
+
+      vocab_list: text.vocabList,
+      verbs_list: text.verbsList,
+      perfil: text.perfil,
+      fase: text.fase,
+      parrafos: text.parrafos,
+      activo: text.active,
+    };
+
+    res.json({ success: true, data: payload, texto: payload, found: true });
+  } catch (error) {
+    fail(res, 'v1/textos-base', error);
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+// GET /api/study-plan/:code   (code = "S01")
+// Planeacion semanal maestra (StudyLevel + StudyWeek). La consume
+// useStudyPlan() como fuente primaria, antes del Data Lake.
+// ═════════════════════════════════════════════════════════════════
+router.get('/study-plan/:code', async (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase();
+  if (!code) {
+    return res.status(400).json({ success: false, error: 'Falta el codigo de nivel' });
+  }
+
+  try {
+    const level = await prisma.studyLevel.findUnique({
+      where: { code },
+      include: { weeks: { orderBy: { weekNumber: 'asc' } } },
+    });
+
+    if (!level) {
+      return res.status(404).json({ success: false, error: `Nivel ${code} no encontrado` });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        code: level.code,
+        semester: level.semester,
+        cefrTag: level.cefrTag,
+        levelName: level.levelName,
+        isPublished: level.isPublished,
+        weeks: level.weeks.map((w) => ({
+          id: w.id,
+          weekNumber: w.weekNumber,
+          phase: w.phase,
+          fechas: w.fechas,
+          ejeTematico: w.ejeTematico,
+          unidadLibro: w.unidadLibro,
+          paginas: w.paginas,
+          kpi: w.kpi,
+          horasJson: w.horasJson,
+        })),
+      },
+    });
+  } catch (error) {
+    fail(res, 'study-plan/:code', error);
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+// PUT /api/study-plan/:code/weeks/:weekNumber
+// Publica una semana del plan. Lo invoca la Biblioteca Directiva al
+// sincronizar la malla curricular.
+// ═════════════════════════════════════════════════════════════════
+router.put('/study-plan/:code/weeks/:weekNumber', async (req, res) => {
+  const code = String(req.params.code || '').trim().toUpperCase();
+  const weekNumber = Number(req.params.weekNumber);
+
+  if (!code || !Number.isInteger(weekNumber) || weekNumber <= 0) {
+    return res.status(400).json({ success: false, error: 'Parametros invalidos' });
+  }
+
+  try {
+    const level = await prisma.studyLevel.findUnique({ where: { code } });
+    if (!level) {
+      return res.status(404).json({ success: false, error: `Nivel ${code} no encontrado` });
+    }
+
+    const b = req.body || {};
+    const week = await prisma.studyWeek.upsert({
+      where: { levelId_weekNumber: { levelId: level.id, weekNumber } },
+      create: {
+        levelId: level.id,
+        weekNumber,
+        fechas: String(b.fechas ?? ''),
+        ejeTematico: String(b.ejeTematico ?? ''),
+        unidadLibro: String(b.unidadLibro ?? ''),
+        paginas: String(b.paginas ?? ''),
+        kpi: String(b.kpi ?? ''),
+        horasJson: Array.isArray(b.horasJson) ? b.horasJson : [],
+      },
+      update: {
+        fechas: String(b.fechas ?? ''),
+        ejeTematico: String(b.ejeTematico ?? ''),
+        unidadLibro: String(b.unidadLibro ?? ''),
+        paginas: String(b.paginas ?? ''),
+        kpi: String(b.kpi ?? ''),
+        horasJson: Array.isArray(b.horasJson) ? b.horasJson : [],
+      },
+    });
+
+    res.json({ success: true, data: { id: week.id, weekNumber: week.weekNumber } });
+  } catch (error) {
+    fail(res, 'study-plan PUT weeks', error);
+  }
+});
+
 export default router;

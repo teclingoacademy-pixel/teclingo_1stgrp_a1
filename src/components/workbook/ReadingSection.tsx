@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { apiUrl } from '@/services/apiConfig';
 
 interface ReadingSectionProps {
   claseId: string;
@@ -13,7 +14,7 @@ export const ReadingSection: React.FC<ReadingSectionProps> = ({ claseId }) => {
       try {
         // AGREGAR TIMESTAMP PARA EVITAR CACHÉ
         const response = await fetch(
-          `/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}&t=${Date.now()}`,
+          apiUrl(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}&t=${Date.now()}`),
           { headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' } }
         );
         const data = await response.json();

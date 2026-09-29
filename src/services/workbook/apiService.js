@@ -1,5 +1,7 @@
 // src/services/apiService.js
 
+import { apiUrl } from '../apiConfig';
+
 const API_URL = 'https://script.google.com/macros/s/AKfycbx5mvsdlSFA48cNgU9-V16f7Xl507EAIR6nr75MGfnd52Ug_BP5TsQ2ptgDfeb_zLrNVQ/exec';
 
 export const apiService = {
@@ -73,7 +75,7 @@ export const apiService = {
   // 5. Obtener texto base de comprensión lectora
   getTextoBase: async (claseId) => {
     try {
-      const response = await fetch(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}`);
+      const response = await fetch(apiUrl(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}`));
       if (response.ok) {
         return await response.json();
       }

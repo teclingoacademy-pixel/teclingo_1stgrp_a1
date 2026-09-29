@@ -3,6 +3,7 @@
 SPDX-License-Identifier: Apache-2.0
 */
 import React, { useState, useEffect, useRef } from 'react';
+import { apiUrl } from '../services/apiConfig';
 import {
   UploadCloud,
   FileCode,
@@ -584,7 +585,7 @@ export function DirectorLibrary() {
     try {
       let successCount = 0;
       for (const semana of mallaCurricularData) {
-        const res = await fetch(`/api/study-plan/S01/weeks/${semana.semana}`, {
+        const res = await fetch(apiUrl(`/api/study-plan/S01/weeks/${semana.semana}`), {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

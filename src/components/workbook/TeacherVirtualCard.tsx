@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import type { SheetTextoExplicativoRow } from '@/types/workbook/workbookRows';
 import { cleanTextForTTS } from '@/utils/workbook/audioFeedback';
+import { apiUrl } from '@/services/apiConfig';
 
 interface TeacherVirtualCardProps {
   explicacion: SheetTextoExplicativoRow;
@@ -291,7 +292,7 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
     if (!claseId) { setApiScript(null); return; }
 
     setIsLoadingScript(true);
-    fetch('/api/lessons/' + encodeURIComponent(claseId) + '/teacher-script')
+    fetch(apiUrl('/api/lessons/' + encodeURIComponent(claseId) + '/teacher-script'))
       .then((r) => r.ok ? r.json() : null)
       .then((json) => {
         if (cancelled) return;

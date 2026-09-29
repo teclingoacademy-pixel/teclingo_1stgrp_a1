@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Volume2, VolumeX, CheckCircle2, AlertCircle, XCircle, Send, BookOpen, ChevronDown, ChevronUp } from 'lucide-react';
+import { apiUrl } from '@/services/apiConfig';
 import { playAudio, stopAudio, isValidEnglishForTTS } from '@/services/workbook/ttsService';
 import { stopSpeech } from '@/utils/workbook/audioFeedback';
 
@@ -100,7 +101,7 @@ export const WritingExercise: React.FC<WritingExerciseProps> = ({
     let cancelled = false;
     setLoadingTextBase(true);
     setTextBaseError(null);
-    fetch('/api/v1/textos-base?clase_id=' + encodeURIComponent(claseId))
+    fetch(apiUrl('/api/v1/textos-base?clase_id=' + encodeURIComponent(claseId)))
       .then((r) => r.json())
       .then((json) => {
         if (cancelled) return;

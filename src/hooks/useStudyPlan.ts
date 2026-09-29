@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
+import { apiUrl } from '../services/apiConfig';
 import type { SemanaMalla, HoraLeccion } from '../types/workbook/malla';
 
 const DATA_LAKE_API_URL =
@@ -96,7 +97,7 @@ function toSemanas(rows: any[]): SemanaMalla[] {
 }
 
 async function fetchFromPrisma(code: string): Promise<{ weeks: SemanaMalla[]; level: StudyPlanLevel } | null> {
-  const res = await fetch(`/api/study-plan/${encodeURIComponent(code)}`);
+  const res = await fetch(apiUrl(`/api/study-plan/${encodeURIComponent(code)}`));
   if (!res.ok) return null;
   const json = await res.json();
   if (!json?.success || !json.data || !Array.isArray(json.data.weeks)) return null;

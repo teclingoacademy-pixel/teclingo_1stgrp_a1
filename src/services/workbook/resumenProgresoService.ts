@@ -36,6 +36,7 @@ import {
   obtenerResumenProgreso as obtenerResumenProgresoDataLake,
 } from './dataLakeProgressService';
 import { getActiveSpreadsheetId } from './nativeSheetService';
+import { apiUrl } from '@/services/apiConfig';
 
 export type EstadoClase = 'pendiente' | 'en_progreso' | 'completada';
 
@@ -434,7 +435,7 @@ export async function syncUserXpTotalToGoogleSheet(
  */
 export async function hydrateResumenProgresoFromPrisma(userId: string): Promise<void> {
   try {
-    const resp = await fetch(`/api/progress/${encodeURIComponent(userId)}`);
+    const resp = await fetch(apiUrl(`/api/progress/${encodeURIComponent(userId)}`));
     if (!resp.ok) return;
     const json = await resp.json();
     if (!json.ok || !json.data?.resumen) return;

@@ -78,7 +78,7 @@ export const loadReactivos = async (
   // Si la leccion no tiene ejercicios en DB, se devuelve [] y la UI
   // muestra un empty state honesto (sin contenido simulado).
   try {
-    const res = await fetch(`/api/lessons/${encodeURIComponent(claseId)}`);
+    const res = await fetch(apiUrl(`/api/lessons/${encodeURIComponent(claseId)}`));
     if (res.ok) {
       const json = await res.json();
       if (json && json.success && json.data && Array.isArray(json.data.exercises)) {
@@ -203,7 +203,7 @@ useEffect(() => {
       // FIX 2026-09-27: sin preload legacy. Solo fetch real.
       // Consulta al endpoint /api/v1/textos-base con TIMESTAMP para evitar caché
       try {
-        const res = await fetch(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}&t=${Date.now()}`, {
+        const res = await fetch(apiUrl(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}&t=${Date.now()}`), {
           headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
         });
         if (res.ok) {

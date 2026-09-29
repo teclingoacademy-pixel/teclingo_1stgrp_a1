@@ -7,6 +7,7 @@
  * usando OAuth2 y la cuenta de servicio oficial: teclingo-workbook@tecligo-workbook-v1.iam.gserviceaccount.com
  */
 
+import { apiUrl } from '@/services/apiConfig';
 import { readSpreadsheetValues, appendSpreadsheetRowDirect, hasWorkspaceToken } from './googleWorkspaceService';
 import { apiV1Engine } from './apiV1Service';
 import type { SheetProgresoUsuarioRow } from '@/types/workbook/workbookRows';
@@ -240,7 +241,7 @@ export const saveProgressToGoogleSheet = async (
     };
     const prismaEmail = resolvePrismaEmail();
 
-    const resp = await fetch('/api/progress/submission', {
+    const resp = await fetch(apiUrl('/api/progress/submission'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -389,7 +390,7 @@ export const getTextoBaseFromGoogleSheet = async (
 
   // Fallback: consultar Prisma vía /api/v1/textos-base
   try {
-    const res = await fetch(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}`);
+    const res = await fetch(apiUrl(`/api/v1/textos-base?clase_id=${encodeURIComponent(claseId)}`));
     if (res.ok) {
       const json = await res.json();
       if (json.success && json.data) {
