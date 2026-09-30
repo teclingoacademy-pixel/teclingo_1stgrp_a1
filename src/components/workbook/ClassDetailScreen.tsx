@@ -218,6 +218,7 @@ useEffect(() => {
               titulo: payload.titulo || payload.titulo_texto || '',
               contenido_texto: payload.contenido_texto || payload.contenido || '',
               contenido: payload.contenido || payload.contenido_texto || '',
+              translation: payload.translation || payload.traduccion || '',
               palabras_count: payload.word_count || 0,
               dificultad: payload.difficulty || 1,
               tiempo_audio_seg: payload.estimated_sec || 20,
