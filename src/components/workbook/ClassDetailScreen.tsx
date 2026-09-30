@@ -403,22 +403,9 @@ useEffect(() => {
     return hasReadingRef && hasCompletion;
   }, [currentReactivo, textoBase, selectedSkill]);
 
-  // Identifica si el ejercicio actual tiene un texto base para fase de lectura previa
-  const hasReadingPhase = useMemo(() => {
-    return Boolean(
-      textoBase &&
-      selectedSkill !== 'listening' &&
-      currentReactivo?.habilidad?.toLowerCase() !== 'listening' && (
-        selectedSkill === 'reading' ||
-        currentReactivo?.habilidad === 'reading' ||
-        isReadingCompletionExercise ||
-        currentReactivo?.contexto_espanol?.toLowerCase().includes('texto') ||
-        currentReactivo?.contexto_espanol?.toLowerCase().includes('classroom') ||
-        currentReactivo?.pista_vocabulario?.toLowerCase().includes('texto') ||
-        currentReactivo?.pregunta_texto?.toLowerCase().includes('classroom')
-      )
-    );
-  }, [textoBase, selectedSkill, currentReactivo, isReadingCompletionExercise]);
+  // FIX 2026-09-30: Simplificado. Solo depende de que exista textoBase.
+  // El boton "Ver lectura" estara disponible siempre que haya un texto.
+  const hasReadingPhase = useMemo(() => Boolean(textoBase), [textoBase]);
 
   // Speech synthesis helper using the unified female natural voice engine with cleanTextForTTS
   const speakReactivoText = (text: string) => {
@@ -598,7 +585,8 @@ useEffect(() => {
     setValidationState('unanswered');
     setTimeLeft(currentReactivo ? currentReactivo.tiempo_limite_seg : 25);
     setIsTimerActive(true);
-    setIsReadingPhase(true); // Siempre inicia en Fase 1 (Lectura) si aplica
+    // FIX 2026-09-30: NO reiniciar isReadingPhase entre skills (solo al inicio de la clase).
+    // El alumno puede volver a ver el texto con el boton 'Ver lectura'.
     setRunResults({
       total: 0,
       correct: 0,
@@ -1287,7 +1275,7 @@ useEffect(() => {
                 {hasReadingPhase && isReadingPhase ? (
                   <div className="px-2.5 sm:px-3 py-1 rounded-full border border-blue-300 bg-blue-50 text-blue-800 flex items-center gap-1.5 text-xs font-mono font-bold">
                     <BookOpen className="w-3.5 h-3.5 shrink-0 text-blue-600" />
-                    <span>Fase 1: Lectura</span>
+                    <span>Lectura inicial</span>
                   </div>
                 ) : (
                   <div className={`px-2.5 sm:px-3 py-1 rounded-full border flex items-center gap-1.5 text-xs font-mono font-bold ${
@@ -1296,7 +1284,7 @@ useEffect(() => {
                       : 'bg-gray-100 border-gray-200 text-gray-800'
                   }`}>
                     <Clock className="w-3.5 h-3.5 shrink-0 text-gray-600" />
-                    <span>{timeLeft}s</span>
+                    <span>{selectedSkill.toUpperCase()} - {timeLeft}s</span>
                   </div>
                 )}
               </div>
