@@ -10,7 +10,8 @@
 import { API_BASE } from './apiConfig';
 
 const LOCAL_API_URL =
-  (import.meta.env.VITE_API_URL as string | undefined)?.trim() || 'http://localhost:3000';
+  (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
+  (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 /** Identity API (Data Lake) — las acciones del Calendario Institucional viven en
  * el mismo Apps Script de identidad del ecosistema (Code.gs), igual que el resto

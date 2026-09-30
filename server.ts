@@ -38,7 +38,7 @@ const CORS_ORIGINS = [
 // hacer clic. "same-origin-allow-popups" mantiene el aislamiento y abre esa
 // excepcion. No se relaja COEP ni el resto de headers.
 app.use(helmet({
-  crossOriginOpenerPolicy: { policy: "same-origin-allow-popups" },
+  crossOriginOpenerPolicy: { policy: "unsafe-none" },
 }));
 app.use(cors({
   origin: (origin, callback) => {
