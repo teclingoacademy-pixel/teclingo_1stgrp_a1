@@ -12,9 +12,10 @@ const IDENTITY_API_URL =
   (import.meta.env.VITE_IDENTITY_API_URL as string | undefined)?.trim() ||
   'https://script.google.com/macros/s/AKfycbz1OBcF2logEt-r_gaOdpG9MhcjsVkz3_MZiJKf9iSS1T1lpYmAj_MoFtrssCnT7q-k/exec';
 
-const LOCAL_API_URL =
-  (import.meta.env.VITE_API_URL as string | undefined)?.trim() ||
-  (import.meta.env.PROD ? '' : 'http://localhost:3000');
+const rawApiUrl = (import.meta.env.VITE_API_URL as string | undefined)?.trim();
+const LOCAL_API_URL = rawApiUrl
+  ? (rawApiUrl.startsWith('http') ? rawApiUrl : `https://${rawApiUrl}`)
+  : (import.meta.env.PROD ? '' : 'http://localhost:3000');
 
 // Allow all origins for cross-origin requests from frontend to backend
 const crossOriginOpenerPolicy = "none";
