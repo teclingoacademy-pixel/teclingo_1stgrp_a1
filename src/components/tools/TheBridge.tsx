@@ -5,6 +5,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { apiUrl } from '../../services/apiConfig';
+import { registerAudioElement, unregisterAudioElement } from '../../utils/workbook/audioSupervisor';
 import { 
   Waves, 
   ChevronLeft, 
@@ -111,11 +112,15 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
   const [activeWordIndex, setActiveWordIndex] = useState<number | null>(null);
   const [selectedModel, setSelectedModel] = useState<'EMILY' | 'JAMES'>('EMILY');
   const [transcript, setTranscript] = useState('');
+  const [customPhraseEs, setCustomPhraseEs] = useState('');
+  const [customPhraseEn, setCustomPhraseEn] = useState<string | null>(null);
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [isCustomPhrase, setIsCustomPhrase] = useState(false);
   const recognitionRef = useRef<any>(null);
 
   const [feedback, setFeedback] = useState<string>('Inicia grabación para recibir un diagnóstico detallado de tu pronunciación.');
 
-  const phrase = CEFR_LEVELS[currentLevel][phraseIndex];
+  const phrase = isCustomPhrase && customPhraseEn ? customPhraseEn : CEFR_LEVELS[currentLevel][phraseIndex];
   const words = phrase.split(' ');
 
   const handleNextPhrase = () => {
@@ -125,6 +130,44 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
     setMatchScore(0);
     setTranscript('');
     setFeedback('Frase siguiente cargada. Presiona el micrófono para evaluar tu pronunciación.');
+  };
+
+  const handleTranslateAndPractice = async () => {
+    if (!customPhraseEs.trim()) return;
+    const wc = customPhraseEs.trim().split(/\s+/).length;
+    if (wc > 5) {
+      setFeedback('Maximo 5 palabras en espanol. Escribiste ' + wc + '.');
+      return;
+    }
+    setIsTranslating(true);
+    setFeedback('Traduciendo...');
+    try {
+      const res = await fetch(apiUrl('/api/ai/translate-to-english'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: customPhraseEs.trim() }),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Error al traducir');
+      setCustomPhraseEn(json.english);
+      setIsCustomPhrase(true);
+      setMatchScore(0);
+      setTranscript('');
+      setFeedback('Frase personalizada lista: ' + json.english + '. Presiona el microfono.');
+    } catch (e: any) {
+      setFeedback('Error: ' + e.message);
+    } finally {
+      setIsTranslating(false);
+    }
+  };
+
+  const handleBackToLevelPhrases = () => {
+    setIsCustomPhrase(false);
+    setCustomPhraseEn(null);
+    setCustomPhraseEs('');
+    setMatchScore(0);
+    setTranscript('');
+    setFeedback('Volviendo a frases del nivel. Presiona el microfono.');
   };
 
   const handlePrevPhrase = () => {
@@ -183,6 +226,19 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const wordTimingsRef = useRef<number[]>([]);
 
+  // FIX 2026-09-30: al desmontar (cambio de página) se pausa el audio TTS y se
+  // retira del registro global para que no siga sonando en la vista nueva.
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) {
+        try { el.pause(); } catch { /* ya liberado */ }
+        unregisterAudioElement(el);
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
   const handlePlayModel = async () => {
     if (isPlaying) return;
 
@@ -206,6 +262,7 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
       const audio = new Audio(audioUrl);
       audio.playbackRate = 0.9;
       audioRef.current = audio;
+      registerAudioElement(audio);
 
       // Estimate word timings based on audio duration
       const words = phrase.split(' ');
@@ -246,6 +303,7 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
         URL.revokeObjectURL(audioUrl);
         setIsPlaying(false);
         setActiveWordIndex(null);
+        unregisterAudioElement(audio);
         audioRef.current = null;
       };
 
@@ -253,6 +311,7 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
         URL.revokeObjectURL(audioUrl);
         setIsPlaying(false);
         setActiveWordIndex(null);
+        unregisterAudioElement(audio);
         audioRef.current = null;
       };
 
@@ -571,6 +630,46 @@ export function TheBridge({ onClose }: { onClose: () => void }) {
                  >
                     <ChevronLeft size={20} className="rotate-180" />
                  </button>
+              </div>
+
+
+              {/* Practica personalizada */}
+              <div className="mt-4 pt-4 border-t border-white/10">
+                {!isCustomPhrase ? (
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customPhraseEs}
+                      onChange={(e) => setCustomPhraseEs(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleTranslateAndPractice(); }}
+                      placeholder="Escribe en espanol (max 5 palabras)"
+                      disabled={isTranslating}
+                      className="flex-1 px-3 py-2 rounded-lg bg-white/5 border border-white/10 text-white text-xs placeholder-white/30 focus:border-[#DEFF9A]/50 focus:outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={handleTranslateAndPractice}
+                      disabled={isTranslating || !customPhraseEs.trim()}
+                      className="px-3 py-2 rounded-lg bg-[#DEFF9A] text-[#061a1a] text-[10px] font-black uppercase tracking-wider hover:bg-[#c8e886] disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {isTranslating ? '...' : 'Traducir'}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-lg bg-[#DEFF9A]/10 border border-[#DEFF9A]/20">
+                    <div className="min-w-0">
+                      <p className="text-[8px] font-black uppercase tracking-widest text-[#DEFF9A]/70">Tu frase personalizada</p>
+                      <p className="text-xs text-white/70 italic truncate">{customPhraseEs}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleBackToLevelPhrases}
+                      className="px-2 py-1 rounded text-[9px] font-black uppercase tracking-wider text-white/40 hover:text-white hover:bg-white/5"
+                    >
+                      Cambiar
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-center gap-1 mt-6">
