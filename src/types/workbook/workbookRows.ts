@@ -77,6 +77,7 @@ export interface SheetTextoBaseRow {
   titulo_texto?: string;
   contenido?: string;
   contenido_texto?: string;
+  translation?: string;
   palabras_count: number;
   dificultad: number;
   vocabulario_usado?: string[];
