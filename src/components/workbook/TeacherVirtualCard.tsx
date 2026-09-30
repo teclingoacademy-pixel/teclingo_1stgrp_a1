@@ -34,173 +34,31 @@ import type { SheetTextoExplicativoRow } from '@/types/workbook/workbookRows';
 import { cleanTextForTTS } from '@/utils/workbook/audioFeedback';
 import { apiUrl } from '@/services/apiConfig';
 
+// ===================================================================
+// Parser de guion bilingue [ES] / [EN]
+// ===================================================================
+function parseBilingualScript(content: string): { es: string; en: string } {
+  if (!content) return { es: '', en: '' };
+  const parts = content.split(/\[EN\]/i);
+  let esBlock = parts[0] || '';
+  const enBlock = parts[1] || '';
+  esBlock = esBlock.replace(/\[ES\]\s*/i, '').trim();
+  esBlock = esBlock.replace(/\s*---\s*$/, '').trim();
+  return { es: esBlock, en: enBlock.trim() };
+}
+
+function cleanTextForLanguage(text: string, lang: 'es' | 'en'): string {
+  if (lang === 'en') {
+    return text.replace(/[\u201C\u201D\"]/g, '').replace(/\s+/g, ' ').trim();
+  }
+  return text;
+}
 interface TeacherVirtualCardProps {
   explicacion: SheetTextoExplicativoRow;
   claseId: string;
   theme?: 'dark' | 'light';
 }
 
-// Script de Audio Profesional sugerido por la pedagogía de TecLingo para N1-C01
-export const A1_C01_AUDIO_SCRIPT = `Bienvenidos a la Fase Cero de TecLingo. Hoy vamos a construir los cimientos de tu aprendizaje del inglés.
-
-Para construir una base lingüística sólida y evitar errores sistemáticos de traducción, es indispensable dominar la estructura de los sujetos antes de introducir cualquier verbo o regla gramatical compleja.
-
-El primer paso para pensar en inglés consiste en clasificar todo elemento del entorno según su número gramatical.
-
-Singular, concepto "uno": Se refiere de manera estricta a una sola entidad. Por ejemplo: "student" (estudiante), "book" (libro), "office" (oficina).
-
-Plural, concepto "varios" o "más de uno": Representa a dos o más entidades de la misma clase. En inglés, por regla general, se añade el sufijo "-s" o "-es" al sustantivo. Por ejemplo: "students" (estudiantes), "books" (libros), "offices" (oficinas).
-
-Para eliminar la memorización mecánica de conjugaciones desordenadas, el sistema de aprendizaje procesa los pronombres personales a través de tres canales lógicos e inflexibles.
-
-Canal Azul, Primera Persona: El pronombre "I" (Yo). Representa exclusivamente al emisor del mensaje. Es un canal prioritario con su propia salida verbal.
-
-Canal Verde, Bloque Plural: Los pronombres "You" (Tú, Usted, Ustedes), "We" (Nosotros, Nosotras) y "They" (Ellos, Ellas).
-
-La Regla de Oro de TecLingo: En nuestro método, el pronombre "You" se clasifica y se procesa estructuralmente dentro del bloque de los Plurales.
-
-¿Por qué? En el inglés moderno no existe un pronombre sólido e independiente para la palabra "ustedes". "You" absorbe tanto la función singular como la plural.
-
-Anclaje Cognitivo: Si el estudiante experimenta alguna duda sobre la naturaleza de este bloque, se aplica la siguiente regla de descarte: ¿Quiénes somos "tú" y "yo" en los pronombres? Nosotros, Plural. Por ende, todo el bloque comparte el mismo auxiliar de salida.
-
-Canal Naranja, Bloque Singular de Tercera Persona: Los pronombres "He" (Él), "She" (Ella) e "It" (Eso, objeto, animal, concepto). Representa a las personas u objetos que están fuera de la interacción directa del habla. Toda entidad singular externa se procesa unificadamente a través de este canal.
-
-A diferencia del español, donde es común omitir el sujeto en la oración, por ejemplo: "Estamos en la biblioteca", en el idioma inglés la omisión del pronombre o sujeto es incorrecta.
-
-Toda oración requiere de manera obligatoria declarar explícitamente quién o qué ejecuta la acción o experimenta el estado.
-
-Ejemplo en español con sujeto elidido: "Es un libro." Incorrecto en inglés.
-Ejemplo en inglés con estructura obligatoria: "It is a book." Correcto.
-
-Esta matriz integra los cimientos de la Fase Cero con la conjugación en tiempo presente, demostrando al alumno que la asignación del verbo no es aleatoria, sino el resultado lógico de su clasificación previa.
-
-Primera Persona Singular: Pronombre "I", Verbo "am", Equivalencia: "Yo soy, Yo estoy", Ejemplo: "I am a student" (Yo soy estudiante).
-
-Segundas Personas Plurales: Pronombres "You, We, They", Verbo "are", Equivalencia: "Tú eres, Nosotros somos, Ellos son o están", Ejemplo: "They are friends" (Ellos son amigos).
-
-Terceras Personas Singulares: Pronombres "He, She, It", Verbo "is", Equivalencia: "Él es, Ella es, Eso es o está", Ejemplo: "He is a teacher" (Él es maestro).
-
-Excelente. Ahora dominas los fundamentos de cantidad y clasificación de sujetos. En la siguiente clase, aplicaremos estos conceptos con el Verbo To Be.`;
-
-// ===================================================================
-// GUIONES DE AUDIO DEL TEACHER — por leccion
-// Regla: conceptos en español, ejemplos en inglés entre comillas.
-// ===================================================================
-export const LESSON_AUDIO_SCRIPTS: Record<string, string> = {
-  'N1-C01': A1_C01_AUDIO_SCRIPT,
-
-  'N1-C00': `Bienvenidos a la Fase Cero de TecLingo. Hoy vamos a construir los cimientos: singular y plural en inglés.
-
-En inglés, como en español, todo sustantivo tiene un numero gramatical. Singular significa "uno": "book" (libro), "child" (niño), "person" (persona). Plural significa "mas de uno": "books" (libros), "children" (niños), "people" (personas).
-
-Regla general: agregamos una "s" al final. "Book" se convierte en "books". "Car" se convierte en "cars". "Table" se convierte en "tables".
-
-Regla especial: algunos sustantivos cambian completamente. "Child" se convierte en "children", no "childs". "Person" se convierte en "people", no "persons". "Man" se convierte en "men". "Woman" se convierte en "women". Estos se memorizan.
-
-Ahora veamos los demostrativos. Para singular cercano usamos "this" (esto/este). Para singular lejano usamos "that" (eso/ese). Ejemplo: "This is a book." significa "Esto es un libro". "That is a car." significa "Eso es un coche".
-
-Para plural cercano usamos "these" (estos/estas). Para plural lejano usamos "those" (esos/esas). Ejemplo: "These are books." significa "Estos son libros". "Those are cars." significa "Esos son coches".
-
-El verbo cambia: en singular usamos "is". Ejemplo: "A book is here." En plural usamos "are". Ejemplo: "Two books are here."
-
-Regla de oro: el articulo "a" o "an" solo se usa con singular. "A book", "an apple". Nunca "a books". Con plural, o no usamos articulo o usamos "the". Ejemplo: "Books are here." o "The books are here."
-
-Recuerda: "you" siempre es plural en inglés. Aunque hables con una sola persona, "you are" siempre va en plural.`,
-
-  'N1-C02': `Bienvenidos a la clase 2: Datos Personales. Hoy vas a aprender a presentarte en inglés.
-
-El primer dato es el nombre. La pregunta es "What is your name?" que significa "Como te llamas?". La respuesta es "My name is..." o "I am...". Ejemplo: "My name is Diego." significa "Mi nombre es Diego". "I am Diego." significa "Yo soy Diego". Ambas formas son correctas.
-
-El segundo dato es la edad. En español decimos "Tengo 21 años". Pero en inglés NO se usa "have" para la edad. Se usa el verbo "to be". Se dice "I am 21 years old" literalmente "Yo soy 21 años viejo". La estructura es: pronombre + "am/is/are" + numero + "years old". Ejemplo: "I am 21 years old." significa "Tengo 21 años". "She is 25 years old." significa "Ella tiene 25 años".
-
-El tercer dato es el origen. La pregunta es "Where are you from?" que significa "De donde eres?". La respuesta usa "from": "I am from..." Ejemplo: "I am from Panuco." significa "Soy de Panuco". "I am from Veracruz." significa "Soy de Veracruz".
-
-El verbo "to be" cambia segun el pronombre. Con "I" usamos "am". Con "he", "she", "it" usamos "is". Con "you", "we", "they" usamos "are".
-
-Regla de oro: en inglés nunca se omite el sujeto. Aunque en español digamos "Soy de Panuco" sin pronombre, en inglés debemos decir "I am from Panuco" con el "I" obligatorio.`,
-
-  'N1-C03': `Bienvenidos a la clase 3: Adjetivos Posesivos y Genitivo Sajon. Hoy vas a aprender a decir "mi", "tu", "su", "nuestro" y "su de ellos" en inglés.
-
-Los adjetivos posesivos indican de quien es algo. En inglés son siete: "my" (mi), "your" (tu), "his" (su de él), "her" (su de ella), "its" (su de cosa o animal), "our" (nuestro), "their" (su de ellos).
-
-Regla de oro: los adjetivos posesivos en inglés NO cambian con el género del sustantivo. Siempre van igual. "My book" (mi libro), "my house" (mi casa), "my books" (mis libros). Nada de "mía", "míos", "mías". Una sola forma por pronombre.
-
-Estructura: adjetivo posesivo + sustantivo. Ejemplo: "This is my brother." significa "Este es mi hermano". "Her name is Laura." significa "Su nombre es Laura". "Our house is small." significa "Nuestra casa es pequeña". "Their car is red." significa "Su coche es rojo".
-
-Ahora el genitivo sajon. Se usa para indicar posesion de personas o animales. Se forma agregando apostrofo y "s" al poseedor: "Carlos's dog" (el perro de Carlos), "Maria's book" (el libro de Maria), "the teacher's car" (el coche del maestro).
-
-Regla: el apostrofo va antes de la "s" para singular y despues de la "s" para plural. "The student's book" = el libro del estudiante. "The students' books" = los libros de los estudiantes.
-
-Cuidado: cuando el sustantivo ya es plural y termina en "s", solo agregamos apostrofo al final. Ejemplo: "the boys' toys" (los juguetes de los niños).
-
-Combinemos todo. "This is my brother's car." significa "Este es el coche de mi hermano". "Our teacher's name is Ana." significa "El nombre de nuestra maestra es Ana". "Their parents' house is big." significa "La casa de sus padres es grande".`,
-  'N1-C04': `¡Hola de nuevo! En esta Clase 04 de Teclingo, entraremos a la Fase 2 del Apóstrofe. Aquí aprenderás a fusionar la palabra NOT con tus auxiliares IS y ARE. Esto es vital para dejar de sonar como un robot y hablar de forma natural.
-
-Para contraer la negación, unimos el verbo y la palabra NOT, eliminando la letra O y reemplazándola con un apóstrofe. Así, IS NOT se convierte en ISN'T, y ARE NOT se convierte en AREN'T.
-
-Pero cuidado: la combinación AM NOT no tiene contracción directa; nunca digas AMN'T. En su lugar, contraemos el pronombre: I'M NOT.
-
-En las preguntas, el apóstrofe nos ayuda a mantener un ritmo rápido y profesional. Ejemplos: "Isn't he a teacher?" o "Aren't they at home?".`,
-
-  'N1-C05': `Bienvenidos a la clase 5: Plurales y Preposiciones de Lugar. Hoy vas a aprender a hablar de varias cosas y a decir donde estan.
-
-Empecemos con los plurales. En ingles, para hacer plural un sustantivo, generalmente agregamos "s". "Book" se convierte en "books" (libros). "Table" se convierte en "tables" (mesas). "Cat" se convierte en "cats" (gatos).
-
-Regla especial: si la palabra termina en "s", "sh", "ch", "x" o "z", agregamos "es". "Box" se convierte en "boxes" (cajas). "Church" se convierte en "churches" (iglesias). "Bus" se convierte en "buses" (autobuses).
-
-Otra regla: si termina en "y" despues de consonante, cambiamos la "y" por "ies". "Baby" se convierte en "babies" (bebes). "City" se convierte en "cities" (ciudades).
-
-Ahora las preposiciones de lugar. Son palabras que dicen donde esta algo: "in" (en/dentro), "on" (sobre/encima), "under" (debajo), "next to" (al lado de), "near" (cerca de).
-
-Ejemplos: "The book is on the table." significa "El libro esta sobre la mesa". "The cat is under the chair." significa "El gato esta debajo de la silla". "The flowers are in the garden." significa "Las flores estan en el jardin".
-
-Regla de oro: usamos "on" para superficies, "in" para espacios cerrados, "under" para debajo. "The books are on the table" (superficie). "The books are in the box" (espacio cerrado). "The books are under the table" (debajo).
-
-Combinemos. "There are two books on the table." significa "Hay dos libros sobre la mesa". Observa: "there are" es para plural, "there is" es para singular. "There is a cat under the chair." significa "Hay un gato debajo de la silla".
-
-Otros ejemplos: "My parents live in a big house." significa "Mis padres viven en una casa grande". "The children play in the backyard." significa "Los ninos juegan en el patio trasero".
-
-Recuerda: en ingles, "there is" y "there are" son las formas mas comunes para decir "hay". "There is" para singular, "there are" para plural.`,
-
-  'N1-C06': `Bienvenidos a la clase 6: Presente Simple en Primera Persona. Hoy vas a aprender a hablar de tu rutina diaria usando "I".
-
-El presente simple es el tiempo que usamos para hablar de acciones habituales, cosas que hacemos todos los dias, o verdades generales. En primera persona usamos el pronombre "I" (yo).
-
-Regla de oro: con "I", el verbo va en su forma base, sin cambios. "I wake up" (me despierto), "I eat" (como), "I go" (voy), "I study" (estudio), "I read" (leo), "I like" (me gusta). Nada de "wakes" ni "eats". El verbo siempre limpio.
-
-Veamos ejemplos de rutina diaria. "I wake up at 6:30 AM." significa "Me despierto a las 6:30 de la manana". "I eat breakfast with my family." significa "Desayuno con mi familia". "I go to class by bike." significa "Voy a clase en bicicleta".
-
-Usamos adverbios de frecuencia para indicar cada cuanto hacemos algo: "every day" (todos los dias), "every morning" (cada manana), "every afternoon" (cada tarde), "usually" (usualmente), "always" (siempre), "sometimes" (a veces), "never" (nunca).
-
-Ejemplos: "I study English in the morning." significa "Estudio ingles en la manana". "I read books in the afternoon." significa "Leo libros en la tarde". "I visit my grandparents on Sundays." significa "Visito a mis abuelos los domingos".
-
-Regla de oro: los adverbios de frecuencia en ingles van ANTES del verbo principal. "I always wake up early" (siempre me despierto temprano). "I usually eat breakfast at 7". "I never drink coffee at night".
-
-Tambien podemos usar "by" para indicar el medio de transporte: "by bike" (en bicicleta), "by bus" (en autobus), "by car" (en carro), "by train" (en tren), "on foot" (a pie).
-
-Ejemplo completo: "Every day, I wake up at 6:30 AM. I eat breakfast with my family. I go to class by bike. I study English in the morning. I read books in the afternoon."
-
-Recuerda: en presente simple con "I", el verbo NUNCA lleva "s". Ese error es uno de los mas comunes entre hispanohablantes. "I eats" esta mal. "I eat" es correcto.`,
-
-  'N1-C07': `Bienvenidos a la clase 7: Presente Simple en Tercera Persona. Hoy vas a aprender el famoso hack de la "s" con "he", "she" e "it".
-
-En la clase anterior vimos que con "I" el verbo no cambia. Pero aqui viene la regla mas importante del presente simple: con "he", "she" o "it", el verbo SIEMPRE lleva "s" al final.
-
-Regla de oro: he/she/it + verbo + s. Ejemplos: "He wakes up" (el se despierta), "She eats" (ella come), "It works" (eso funciona). Compara: "I wake up" pero "He wakes up". "I eat" pero "She eats". La "s" es obligatoria en tercera persona.
-
-Reglas especiales de la "s" o "es": verbos que terminan en "s", "sh", "ch", "x", "o" agregan "es". "Go" se convierte en "goes". "Watch" se convierte en "watches". "Teach" se convierte en "teaches". "Do" se convierte en "does". Verbos que terminan en "y" despues de consonante cambian "y" por "ies". "Study" se convierte en "studies". "Cry" se convierte en "cries". "Fly" se convierte en "flies".
-
-Ejemplos: "He wakes up early every day." significa "El se despierta temprano todos los dias". "He eats breakfast at 7 AM." significa "El desayuna a las 7". "He goes to work by bus." significa "El va al trabajo en autobus". "He teaches English at a small school." significa "El ensena ingles en una escuela pequena".
-
-Observa la diferencia: "I go" pero "He goes". "I teach" pero "He teaches". "I study" pero "He studies".
-
-Los adverbios de frecuencia tambien van antes del verbo: "He usually goes to bed at 10 PM." significa "El usualmente se va a la cama a las 10 de la noche". "He always eats breakfast." "He sometimes plays soccer."
-
-Mas ejemplos: "He likes helping his students." significa "A el le gusta ayudar a sus estudiantes". "He reads the newspaper every morning." significa "El lee el periodico cada manana". "He plays soccer on Sundays." significa "El juega futbol los domingos".
-
-Regla de oro final: cuando hables de una persona o cosa especifica (Carlos, mi mama, el perro, la escuela), SIEMPRE lleva "s" en el verbo. Es el error numero uno de los estudiantes. "My brother wake up" esta mal. "My brother wakes up" es correcto.`,
-
-};
 export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
   explicacion,
   claseId,
@@ -219,6 +77,8 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
 
   // FIX 2026-09-28: estado del guion cargado desde /api/lessons/:id/teacher-script
   const [apiScript, setApiScript] = useState<{ title: string; content: string } | null>(null);
+  const [scriptBlocks, setScriptBlocks] = useState<{ es: string; en: string }>({ es: '', en: '' });
+  const [activeLanguage, setActiveLanguage] = useState<'es' | 'en'>('es');
   const [isLoadingScript, setIsLoadingScript] = useState<boolean>(false);
 
   // Accordion Sections State - All closed by default per pedagogical UX guidelines
@@ -298,18 +158,24 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
         if (cancelled) return;
         if (json && json.ok && json.data && json.data.content) {
           setApiScript({ title: json.data.title, content: json.data.content });
+          setScriptBlocks(parseBilingualScript(json.data.content));
         } else {
           setApiScript(null);
         }
       })
-      .catch(() => { if (!cancelled) setApiScript(null); })
+      .catch(() => {
+        if (!cancelled) {
+          setApiScript(null);
+          setScriptBlocks({ es: '', en: '' });
+        }
+      })
       .finally(() => { if (!cancelled) setIsLoadingScript(false); });
 
     return () => { cancelled = true; };
   }, [claseId]);
 
   // Handle Play / Stop Speech
-  const handleTogglePlay = (customText?: string, sectionName: string = 'Explicación Completa') => {
+  const handleTogglePlay = (customText?: string, sectionName: string = 'Explicación Completa', forceLang?: 'es' | 'en') => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) return;
 
     if (isPlaying && !isPaused && !customText) {
@@ -329,32 +195,55 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
     // Start new speech
     window.speechSynthesis.cancel();
 
-    // Determine text to read: if N1-C01 use the fine-tuned natural audio script or custom section
-    let textToSpeak = customText || apiScript?.content || LESSON_AUDIO_SCRIPTS[claseId] || explicacion.contenido_markdown || '';
+    // Seleccionar idioma y texto segun forceLang o activeLanguage
+    const lang: 'es' | 'en' = forceLang || activeLanguage;
+    let textToSpeak = '';
 
-    // Clean text using cleanTextForTTS for natural speech flow
-    const cleanSpokenText = cleanTextForTTS(textToSpeak, 'es-MX');
+    if (customText) {
+      textToSpeak = customText;
+    } else if (scriptBlocks.es || scriptBlocks.en) {
+      textToSpeak = lang === 'en' ? scriptBlocks.en : scriptBlocks.es;
+    } else {
+      textToSpeak = apiScript?.content || explicacion.contenido_markdown || '';
+    }
+
+    if (!textToSpeak) return;
+
+    // Limpieza segun idioma
+    let cleanSpokenText: string;
+    if (lang === 'en') {
+      cleanSpokenText = textToSpeak.replace(/[\u201C\u201D\"]/g, '').replace(/\s+/g, ' ').trim();
+    } else {
+      cleanSpokenText = cleanTextForTTS(textToSpeak, 'es-MX');
+    }
 
     const utterance = new SpeechSynthesisUtterance(cleanSpokenText);
     utterance.rate = speechRate;
 
-    // Assign voice
+    // Asignar voz e idioma
+    const targetLangPrefix = lang === 'en' ? 'en' : 'es';
+    let voiceToUse: SpeechSynthesisVoice | undefined;
+
     if (selectedVoiceURI && availableVoices.length > 0) {
-      const voice = availableVoices.find((v) => v.voiceURI === selectedVoiceURI);
-      if (voice) {
-        utterance.voice = voice;
-        utterance.lang = voice.lang;
-      } else {
-        utterance.lang = 'es-MX';
-      }
+      voiceToUse = availableVoices.find((v) => v.voiceURI === selectedVoiceURI && v.lang.startsWith(targetLangPrefix));
+    }
+    if (!voiceToUse) {
+      const allVoices = window.speechSynthesis.getVoices();
+      voiceToUse = allVoices.find((v) => v.lang.startsWith(targetLangPrefix));
+    }
+
+    if (voiceToUse) {
+      utterance.voice = voiceToUse;
+      utterance.lang = voiceToUse.lang;
     } else {
-      utterance.lang = 'es-MX';
+      utterance.lang = lang === 'en' ? 'en-US' : 'es-MX';
     }
 
     utterance.onstart = () => {
       setIsPlaying(true);
       setIsPaused(false);
       setActiveSectionTitle(sectionName);
+      setActiveLanguage(lang);
     };
 
     utterance.onend = () => {
@@ -424,7 +313,7 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
   const isDark = theme === 'dark';
 
   // FIX 2026-09-28: contenido del guion desde API (prioridad) o fallback hardcoded
-  const activeScriptContent: string | null = apiScript?.content || LESSON_AUDIO_SCRIPTS[claseId] || null;
+  const activeScriptContent: string | null = apiScript?.content || null;
   const activeScriptTitle: string = apiScript?.title || (claseId + ' - Guion del Teacher');
 
   return (
@@ -742,7 +631,7 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
             </span>
             <button
               type="button"
-              onClick={() => handleTogglePlay(A1_C01_AUDIO_SCRIPT, 'Script de Audio Oficial')}
+              onClick={() => handleTogglePlay(scriptBlocks.es, 'Explicación en Español', 'es')}
               className="px-2.5 py-1 rounded bg-[#39FF14] text-black font-bold hover:bg-[#32e012] flex items-center gap-1 text-[11px] cursor-pointer"
             >
               <Play className="w-3 h-3 fill-black" />
@@ -750,7 +639,7 @@ export const TeacherVirtualCard: React.FC<TeacherVirtualCardProps> = ({
             </button>
           </div>
           <div className="max-h-60 overflow-y-auto pr-2 custom-scrollbar whitespace-pre-line leading-relaxed text-[11px] sm:text-xs text-gray-300 bg-[#121416] p-3.5 rounded-lg border border-[#8A95A5]/20">
-            {claseId === 'N1-C00' ? A1_C01_AUDIO_SCRIPT : (apiScript?.content || explicacion.contenido_markdown)}
+            {scriptBlocks.es || scriptBlocks.en || apiScript?.content || explicacion.contenido_markdown}
           </div>
         </div>
       )}
