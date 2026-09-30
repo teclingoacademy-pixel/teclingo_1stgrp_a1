@@ -168,6 +168,8 @@ interface AppContextType {
   setUserName: (name: string) => void;
   userProgress: number;
   setUserProgress: (progress: number) => void;
+  currentClase: { clase_id: string; titulo?: string } | null;
+  setCurrentClase: (clase: { clase_id: string; titulo?: string } | null) => void;
   globalEvents: Event[];
   addGlobalEvent: (event: Event) => void;
   updateGlobalEvent: (event: Event) => void;
@@ -372,6 +374,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => (localStorage.getItem('theme') as Theme) || 'dark');
   const [language, setLanguage] = useState<Language>(() => (localStorage.getItem('lang') as Language) || 'es');
   const [userProgress, setUserProgress] = useState(75);
+  const [currentClase, setCurrentClase] = useState<{ clase_id: string; titulo?: string } | null>(() => {
+    try {
+      const saved = localStorage.getItem('teclingo_current_clase');
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [globalEvents, setGlobalEvents] = useState<Event[]>(mockEvents);
   const [careers, setCareers] = useState<Career[]>([
     {
@@ -820,6 +830,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       setUserName,
       userProgress, 
       setUserProgress, 
+      currentClase,
+      setCurrentClase,
       globalEvents, 
       addGlobalEvent,
       updateGlobalEvent,

@@ -34,13 +34,13 @@ interface ChatMessage {
   sources?: Array<{ title: string; uri: string }>;
 }
 
-export function AITutor({ onClose }: { onClose: () => void }) {
+export function AITutor({ onClose, lessonId = 'CLASE_01' }: { onClose: () => void; lessonId?: string }) {
   const [activeTab, setActiveTab] = useState<'chat' | 'library'>('chat');
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: '1',
       role: 'assistant',
-      content: "¡Hola Alex! Soy tu tutor pedagógico TECLINGO. Veo que estás trabajando en 'Past Perfect' esta semana. ¿En qué puedo apoyarte hoy?",
+      content: "¡Hola! Soy tu tutor pedagógico TECLINGO. ¿En qué puedo apoyarte hoy?",
       timestamp: new Date()
     }
   ]);
@@ -114,24 +114,27 @@ export function AITutor({ onClose }: { onClose: () => void }) {
         parts: [{ text: msg.content }]
       }));
 
-      const response = await fetch(apiUrl('/api/tutor'), {
+      const response = await fetch(apiUrl('/api/ai/ask'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: messageToSend,
-          history,
-          studentContext: aiContext
+          lessonId: lessonId,
+          level: 'A1',
+          mode: 'tutor',
+          history: history.map(h => ({ role: h.role, content: h.parts?.[0]?.text || '' }))
         })
       });
 
       const data = await response.json();
+      const aiContent = data?.data?.content || data?.content || data?.error;
       
       const aiMsg: ChatMessage = {
         id: (Date.now() + 1).toString(),
         role: 'assistant',
-        content: data.content || data.error || "Lo siento, tuve un problema al procesar tu solicitud.",
+        content: aiContent || "Lo siento, tuve un problema al procesar tu solicitud.",
         timestamp: new Date(),
-        sources: data.sources
+        sources: data?.sources
       };
       setMessages(prev => [...prev, aiMsg]);
     } catch (error) {
@@ -303,7 +306,7 @@ export function AITutor({ onClose }: { onClose: () => void }) {
 
           <div className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/[0.03] border border-white/5 text-white/40">
              <Clock size={13} className="text-[#DEFF9A]/60" />
-             <span className="text-[8px] font-black tracking-wider text-white/80">SEMANA 4 (PAST PERFECT)</span>
+             <span className="text-[8px] font-black tracking-wider text-white/80">{lessonId.replace('CLASE_', 'Clase ')}</span>
           </div>
         </div>
       </header>

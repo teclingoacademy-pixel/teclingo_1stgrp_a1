@@ -157,6 +157,20 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [claseId]);
 
+  // FIX 2026-09-30: Publicar la clase activa en el contexto global (para el AI Tutor)
+  useEffect(() => {
+    if (claseId && apiClase) {
+      const claseData = {
+        clase_id: apiClase.clase_id,
+        titulo: apiClase.titulo_clase,
+      };
+      setCurrentClase(claseData);
+      try {
+        localStorage.setItem('teclingo_current_clase', JSON.stringify(claseData));
+      } catch {}
+    }
+  }, [claseId, apiClase, setCurrentClase]);
+
   // Current Class Object
   const currentClase: SheetClaseRow = useMemo(() => {
     // FIX 2026-09-27: si el API respondió, usar esa data
@@ -188,7 +202,7 @@ useEffect(() => {
   const [confirmViewSkill, setConfirmViewSkill] = useState<SkillKey | null>(null);
   const [userProgressBySkill, setUserProgressBySkill] = useState<Record<string, number>>({});
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
-  const { userEmail } = useAppContext();
+  const { userEmail, setCurrentClase } = useAppContext();
   const [selectedSkill, setSelectedSkill] = useState<SkillKey>('grammar');
 
   // Texto base para la habilidad Reading (cargado desde la hoja TEXTOS_BASE)

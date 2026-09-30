@@ -46,7 +46,8 @@ const skills: Skill[] = [
 ];
 
 export function AISkillsSupport() {
-  const { userProgress } = useAppContext();
+  const { userProgress, currentClase } = useAppContext();
+  const currentLessonId = (currentClase as any)?.clase_id || 'CLASE_01';
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [showExtraModal, setShowExtraModal] = useState(false);
   const [showARVIPModal, setShowARVIPModal] = useState(false);
@@ -313,7 +314,7 @@ export function AISkillsSupport() {
           <TestMaker onClose={() => setActiveTool(null)} />
         )}
         {activeTool === 'tutor' && (
-          <AITutor onClose={() => setActiveTool(null)} />
+          <AITutor onClose={() => setActiveTool(null)} lessonId={currentLessonId} />
         )}
         {activeTool === 'listening' && (
           <ListeningLab onClose={() => setActiveTool(null)} />
