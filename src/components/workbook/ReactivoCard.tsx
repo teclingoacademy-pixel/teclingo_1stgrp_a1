@@ -564,9 +564,22 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
       }
     }
 
-    const match = reactivo.clase_id?.match(/C0?(\d+)/i);
-    if (match) {
-      const classNum = parseInt(match[1], 10);
+    // Nuevo sistema: CLASE_XX (35 clases basadas en videos)
+    // - CLASE_00, CLASE_01: 'completa' (andamiaje máximo)
+    // - CLASE_02 a CLASE_05: 'parcial' (solo palabras clave)
+    // - CLASE_06 en adelante: 'ninguna' (inmersión total)
+    const matchNew = reactivo.clase_id?.match(/^CLASE_(\d+)$/i);
+    if (matchNew) {
+      const classNum = parseInt(matchNew[1], 10);
+      if (classNum <= 1) return 'completa';
+      if (classNum >= 2 && classNum <= 5) return 'parcial';
+      return 'ninguna';
+    }
+
+    // Sistema legacy: A1_CXX (compatibilidad hacia atrás)
+    const matchOld = reactivo.clase_id?.match(/C0?(\d+)/i);
+    if (matchOld) {
+      const classNum = parseInt(matchOld[1], 10);
       if (classNum === 1) return 'completa';
       if (classNum >= 2 && classNum <= 5) return 'parcial';
       return 'ninguna';
