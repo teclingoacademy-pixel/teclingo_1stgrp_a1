@@ -8,9 +8,10 @@
  */
 
 import React, { useState, useEffect, useRef } from 'react';
-import { BookOpen, Volume2, VolumeX, ArrowRight, CheckCircle2, Headphones } from 'lucide-react';
+import { Volume2, VolumeX, ArrowRight, CheckCircle2 } from 'lucide-react';
 import type { SheetTextoBaseRow } from '@/types/workbook/workbookRows';
 import { playAudio, stopAudio } from '@/services/workbook/ttsService';
+import { registerAudioElement, unregisterAudioElement } from '@/utils/workbook/audioSupervisor';
 
 export interface ReadingTextBaseProps {
   texto?: SheetTextoBaseRow | null;
@@ -33,6 +34,7 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
   const [hasAudioEnded, setHasAudioEnded] = useState<boolean>(!isPhaseMode);
   const [hasStartedAudio, setHasStartedAudio] = useState<boolean>(false);
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
+  const [showTranslation, setShowTranslation] = useState<boolean>(false);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const autoPlayTriggeredRef = useRef<boolean>(false);
 
@@ -43,6 +45,7 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
       stopAudio();
       if (audioRef.current) {
         audioRef.current.pause();
+        unregisterAudioElement(audioRef.current);
       }
       setIsPlaying(false);
     };
@@ -65,11 +68,14 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
     if (isDirectMp3) {
       const audio = new Audio(audioUrl);
       audioRef.current = audio;
+      registerAudioElement(audio);
       audio.onended = () => {
         setIsPlaying(false);
         setHasAudioEnded(true);
+        unregisterAudioElement(audio);
       };
       audio.onerror = () => {
+        unregisterAudioElement(audio);
         playAudio(contenido, { forceLang: 'en-US',
           onEnd: () => {
             setIsPlaying(false);
@@ -82,6 +88,7 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
         });
       };
       audio.play().catch(() => {
+        unregisterAudioElement(audio);
         playAudio(contenido, { forceLang: 'en-US',
           onEnd: () => {
             setIsPlaying(false);
@@ -206,6 +213,26 @@ export const ReadingTextBase: React.FC<ReadingTextBaseProps> = ({
               {contenido}
             </p>
           </div>
+
+          {/* Traduccion al espanol (colapsable) */}
+          {texto?.translation && (
+            <div className='mt-3'>
+              <button
+                type='button'
+                onClick={() => setShowTranslation(!showTranslation)}
+                className='text-sm text-blue-600 hover:text-blue-800 font-semibold px-3 py-1.5 rounded-lg bg-blue-100/70 hover:bg-blue-200/70 border border-blue-200 transition-colors cursor-pointer flex items-center gap-1.5'
+              >
+                {showTranslation ? 'Ocultar traduccion' : 'Ver traduccion en espanol'}
+              </button>
+              {showTranslation && (
+                <div className='mt-2 bg-amber-50 rounded-lg p-4 border border-amber-200'>
+                  <p className='text-gray-700 text-sm sm:text-base leading-relaxed whitespace-pre-line italic'>
+                    {texto.translation}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Footer con estadísticas, botones de audio y botón Continuar */}
           <div className="mt-5 pt-4 border-t border-blue-200 flex flex-col sm:flex-row items-center justify-between gap-3 sm:gap-4">
