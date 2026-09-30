@@ -120,6 +120,8 @@ export const ClassDetailScreen: React.FC<ClassDetailScreenProps> = ({
   onSaveProgress,
   existingProgress = [],
 }) => {
+  const { userEmail, setCurrentClase } = useAppContext();
+
   // FIX 2026-09-27: título de la clase desde API (Prisma) en lugar del legacy
   const [apiClase, setApiClase] = useState<SheetClaseRow | null>(null);
   const [apiVocab, setApiVocab] = useState<SheetVocabularioRow[]>([]);
@@ -202,7 +204,6 @@ useEffect(() => {
   const [confirmViewSkill, setConfirmViewSkill] = useState<SkillKey | null>(null);
   const [userProgressBySkill, setUserProgressBySkill] = useState<Record<string, number>>({});
   const [showCelebration, setShowCelebration] = useState<boolean>(false);
-  const { userEmail, setCurrentClase } = useAppContext();
   const [selectedSkill, setSelectedSkill] = useState<SkillKey>('grammar');
 
   // Texto base para la habilidad Reading (cargado desde la hoja TEXTOS_BASE)
