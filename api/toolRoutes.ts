@@ -19,7 +19,7 @@
  *   POST /api/grammar/verify    -> { score, details }
  */
 
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import { callOllama, parseModelJson, type OllamaMessage } from './ollamaClient';
 
 const router = Router();
@@ -289,6 +289,68 @@ router.post('/grammar/verify', (req, res) => {
 
   const result = verifyTranslation(studentEnglish, targetEnglish, spanish);
   return res.status(200).json({ score: result.score, details: result.details });
+});
+
+
+// ===================================================================
+// POST /api/ai/translate-to-english
+// Traduce una frase corta (max 5 palabras) de espanol a ingles usando Ollama.
+// Usado por The Bridge para practicar frases personalizadas.
+// ===================================================================
+router.post('/ai/translate-to-english', async (req: Request, res: Response) => {
+  try {
+    const { text } = req.body || {};
+
+    if (!text || typeof text !== 'string' || !text.trim()) {
+      return res.status(400).json({ ok: false, error: 'Texto requerido' });
+    }
+
+    const cleanText = text.trim();
+    const wordCount = cleanText.split(/\s+/).length;
+
+    if (wordCount > 5) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Maximo 5 palabras. Escribiste ' + wordCount + '.',
+      });
+    }
+
+    const messages: OllamaMessage[] = [
+      {
+        role: 'system',
+        content:
+          'You are a Spanish-to-English translator for A1 students. ' +
+          'Translate the user Spanish phrase to simple natural English. ' +
+          'Return ONLY the English translation. No quotes. No explanations. No prefixes.',
+      },
+      { role: 'user', content: cleanText },
+    ];
+
+    const raw = await callOllama(messages, { temperature: 0.3, maxTokens: 60 });
+
+    let english = String(raw || '').trim();
+    english = english
+      .replace(/^["'`]+|["'`]+$/g, '')
+      .replace(/^(english|translation|traduccion)\s*:\s*/i, '')
+      .trim();
+
+    if (!english) {
+      return res.status(500).json({ ok: false, error: 'Traduccion vacia' });
+    }
+
+    return res.json({
+      ok: true,
+      original: cleanText,
+      english,
+      wordCount,
+    });
+  } catch (error: any) {
+    console.error('[ai/translate-to-english] error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error?.message || 'Error al traducir',
+    });
+  }
 });
 
 export default router;

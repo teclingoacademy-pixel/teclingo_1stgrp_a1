@@ -182,33 +182,63 @@ function normalizeHistory(raw: unknown): OllamaMessage[] {
 // POST /api/ai/ask
 // ═════════════════════════════════════════════════════════════════
 router.post('/ai/ask', async (req, res) => {
-  const { message, lessonId, history, mode, level } = req.body || {};
+  const { message, lessonId, history, mode, level, contextType } = req.body || {};
 
   if (typeof message !== 'string' || !message.trim()) {
     return res.status(400).json({ success: false, error: 'message requerido' });
   }
   const question = message.trim().slice(0, MAX_MESSAGE_CHARS);
 
+  const effectiveContextType: 'lesson' | 'general' =
+    contextType === 'general' || contextType === 'lesson'
+      ? contextType
+      : (typeof lessonId === 'string' && lessonId.trim() ? 'lesson' : 'general');
+
   try {
+    if (effectiveContextType === 'general') {
+      const grammarCtx = await buildGrammarContext();
+      const system = buildGrammarSystemPrompt(grammarCtx, String(level || 'A1'), String(mode || 'tutor'));
+      const messages: OllamaMessage[] = [
+        { role: 'system', content: system },
+        ...normalizeHistory(history),
+        { role: 'user', content: question },
+      ];
+      const answer = await callOllama(messages);
+      return res.json({
+        success: true,
+        data: {
+          content: answer,
+          model: OLLAMA_MODEL,
+          context: {
+            contextType: 'general',
+            topicsCount: grammarCtx.topics.length,
+            found: grammarCtx.found,
+          },
+        },
+      });
+    }
+
     const ctx = await buildLessonContext(
       typeof lessonId === 'string' && lessonId.trim() ? lessonId.trim() : undefined,
     );
-
     const system = buildSystemPrompt(ctx, String(level || 'A1'), String(mode || 'tutor'));
     const messages: OllamaMessage[] = [
       { role: 'system', content: system },
       ...normalizeHistory(history),
       { role: 'user', content: question },
     ];
-
     const answer = await callOllama(messages);
-
-    res.json({
+    return res.json({
       success: true,
       data: {
         content: answer,
         model: OLLAMA_MODEL,
-        context: { lessonId: ctx.lessonId, lessonTitle: ctx.title, found: ctx.found },
+        context: {
+          contextType: 'lesson',
+          lessonId: ctx.lessonId,
+          lessonTitle: ctx.title,
+          found: ctx.found,
+        },
       },
     });
   } catch (error) {
@@ -229,8 +259,6 @@ router.post('/ai/ask', async (req, res) => {
     res.status(500).json({ success: false, error: 'Error interno del servidor' });
   }
 });
-
-// ═════════════════════════════════════════════════════════════════
 // GET /api/ai/teacher-context?lessonId=N1-C01
 // ═════════════════════════════════════════════════════════════════
 router.get('/ai/teacher-context', async (req, res) => {
@@ -285,5 +313,104 @@ router.get('/ai/health', async (_req, res) => {
     });
   }
 });
+
+
+// ═════════════════════════════════════════════════════════════════
+// BIBLIOTECA MCER (contexto general — sin clase activa)
+// ═════════════════════════════════════════════════════════════════
+
+export type GrammarContext = {
+  topics: Array<{
+    id: string;
+    title: string;
+    titleEn: string;
+    mcer: string;
+    category: string;
+    summary: string;
+    structure: string;
+  }>;
+  found: boolean;
+};
+
+export async function buildGrammarContext(): Promise<GrammarContext> {
+  try {
+    const topics = await prisma.grammarTopic.findMany({
+      where: { active: true },
+      select: {
+        id: true, title: true, titleEn: true, mcer: true,
+        category: true, summary: true, structure: true,
+      },
+      orderBy: [{ mcer: 'asc' }, { order: 'asc' }],
+    });
+    return { topics, found: topics.length > 0 };
+  } catch (e) {
+    console.error('[buildGrammarContext] error:', e);
+    return { topics: [], found: false };
+  }
+}
+
+function buildGrammarSystemPrompt(grammarCtx: GrammarContext, level: string, mode: string): string {
+  const isTeacher = mode === 'teacher';
+  const persona = isTeacher
+    ? 'Eres el Teacher Virtual de TECLINGO, un profesor de ingles experto. Respondes preguntas academicas sobre gramatica, vocabulario y estructuras. Responde en espanol, cita la forma inglesa entre comillas y da ejemplos practicos.'
+    : 'Eres el tutor de ingles de TECLINGO para nivel ' + level + '. Respondes preguntas academicas generales sobre gramatica, vocabulario y estructuras. Responde en espanol, incluye la construccion inglesa correcta y da un ejemplo corto.';
+
+  const blocks: string[] = [persona, ''];
+
+  if (grammarCtx.found) {
+    blocks.push('# BIBLIOTECA MCER DISPONIBLE (usa estos temas como referencia)', '');
+    grammarCtx.topics.forEach((t) => {
+      blocks.push('## [' + t.mcer + '] ' + t.title + ' (' + t.titleEn + ')');
+      if (t.summary) blocks.push(t.summary);
+      if (t.structure) blocks.push('Estructura: ' + t.structure);
+      blocks.push('');
+    });
+    blocks.push('Si la pregunta NO coincide con ningun tema de la lista, responde con tu conocimiento general del nivel ' + level + '.');
+  } else {
+    blocks.push('No hay temas de la Biblioteca MCER cargados. Responde con tu conocimiento general de nivel ' + level + '.');
+  }
+
+  return blocks.join('\n');
+}
+
+// ═════════════════════════════════════════════════════════════════
+// GET /api/ai/grammar-topics
+// ═════════════════════════════════════════════════════════════════
+router.get('/ai/grammar-topics', async (_req, res) => {
+  try {
+    const topics = await prisma.grammarTopic.findMany({
+      where: { active: true },
+      select: {
+        id: true, title: true, titleEn: true, mcer: true,
+        category: true, summary: true, structure: true, order: true,
+      },
+      orderBy: [{ mcer: 'asc' }, { order: 'asc' }],
+    });
+    res.json({ success: true, data: topics, total: topics.length });
+  } catch (error) {
+    console.error('[ai/grammar-topics] error:', error);
+    res.status(500).json({ success: false, error: 'Error interno del servidor' });
+  }
+});
+
+// ═════════════════════════════════════════════════════════════════
+// GET /api/ai/grammar-topics/:id
+// ═════════════════════════════════════════════════════════════════
+router.get('/ai/grammar-topics/:id', async (req, res) => {
+  try {
+    const id = String(req.params.id || '').trim();
+    if (!id) return res.status(400).json({ success: false, error: 'id requerido' });
+    const topic = await prisma.grammarTopic.findUnique({
+      where: { id },
+      include: { examples: { orderBy: { order: 'asc' } } },
+    });
+    if (!topic) return res.status(404).json({ success: false, error: 'Tema no encontrado: ' + id });
+    res.json({ success: true, data: topic });
+  } catch (error) {
+    console.error('[ai/grammar-topics/:id] error:', error);
+    res.status(500).json({ success: false, error: 'Error interno del servidor' });
+  }
+});
+
 
 export default router;

@@ -179,7 +179,7 @@ model UserProgress {
   completed   Boolean  @default(false)
   score       Float?
   completedAt DateTime @default(now())
-  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lesson      Lesson   @relation(fields: [lessonId], references: [id], onDelete: Restrict)
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, lessonId])
@@ -193,7 +193,7 @@ model Submission {
   isCorrect    Boolean
   timeSpentSec Int
   createdAt    DateTime @default(now())
-  exercise     Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
+  exercise     Exercise @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -518,6 +518,7 @@ model TextBase {
   lessonId     String
   title        String
   content      String
+  translation  String?
   wordCount    Int      @default(0)
   difficulty   Int      @default(1)
   timeAudioSec Int      @default(30)

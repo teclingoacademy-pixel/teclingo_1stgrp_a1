@@ -155,7 +155,7 @@ app.get("/api/lessons/:id", async (req: Request, res: Response) => {
     const { id } = req.params;
     const lesson = await prisma.lesson.findUnique({
       where: { id },
-      include: { exercises: { where: { active: true }, orderBy: { itemNumber: "asc" } }, vocabulary: { orderBy: { term: "asc" } } }
+      include: { exercises: { where: { active: true }, orderBy: [{ skill: "asc" }, { itemNumber: "asc" }] }, vocabulary: { orderBy: { term: "asc" } } }
     });
     if (!lesson) return res.status(404).json({ success: false, error: "Lección no encontrada" });
 
@@ -241,6 +241,7 @@ app.get("/api/v1/textos-base", async (req: Request, res: Response) => {
         titulo: textBase.title,
         contenido_texto: textBase.content,
         contenido: textBase.content,
+        translation: textBase.translation,
         perfil: textBase.perfil,
         fase: textBase.fase,
         parrafos: textBase.parrafos,
