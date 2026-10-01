@@ -16,7 +16,6 @@ import {
   Sparkles,
   Search,
   Lock,
-  Sliders
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GlassCard } from './GlassCard';
@@ -28,7 +27,6 @@ import { ListeningLab } from './tools/ListeningLab';
 import { GrammarFixer } from './tools/GrammarFixer';
 import { ExtracurricularModal } from './ExtracurricularModal';
 import { ARVIPModal } from './ARVIPModal';
-import { AvatarMatrix } from './tools/AvatarMatrix';
 import { useAppContext } from '../context/AppContext';
 import { apiUrl } from '../services/apiConfig';
 
@@ -193,31 +191,6 @@ export function AISkillsSupport() {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                 {/* Matriz Protocolo Avatar (SYSTEM PROMPT MAESTRO) */}
-                 <div className="col-span-1 md:col-span-2 p-8 rounded-[2.5rem] bg-gradient-to-r from-emerald-500/10 to-[#DEFF9A]/5 border border-[#DEFF9A]/20 flex flex-col md:flex-row items-center justify-between text-center md:text-left group hover:from-emerald-500/15 hover:to-[#DEFF9A]/10 transition-all relative overflow-hidden gap-6">
-                    <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#DEFF9A] via-emerald-500 to-[#DEFF9A]" />
-                    <div className="flex flex-col md:flex-row items-center gap-6">
-                       <div className="w-16 h-16 rounded-3xl bg-[#DEFF9A]/10 border border-[#DEFF9A]/30 flex items-center justify-center text-[#DEFF9A] shrink-0 group-hover:scale-105 transition-transform">
-                          <Sliders size={32} />
-                       </div>
-                       <div>
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-[#DEFF9A]/20 border border-[#DEFF9A]/30 text-[#DEFF9A] text-[8px] font-mono font-black uppercase tracking-widest mb-1.5">
-                             SYSTEM PROMPT MAESTRO
-                          </div>
-                          <h4 className="text-white text-lg font-black uppercase tracking-tight">Protocolo de Avatar de IA</h4>
-                          <p className="text-white/40 text-[10px] font-medium leading-relaxed max-w-md">
-                             Modos adaptativos Onboarding, Clase Teórica, Corrección Estricta y Asistencia Directiva sincronizados al PDP.
-                          </p>
-                       </div>
-                    </div>
-                    <button 
-                      onClick={() => setActiveTool('avatar')}
-                      className="px-8 py-4 rounded-full bg-[#DEFF9A] hover:bg-[#DEFF9A]/95 text-[#061a1a] text-[10px] tracking-widest font-black uppercase transition-all shadow-[0_0_20px_rgba(222,255,154,0.25)] hover:scale-105 active:scale-95 cursor-pointer shrink-0 font-extrabold"
-                    >
-                       PROBAR AVATAR
-                    </button>
-                 </div>
-
                  {/* The Bridge */}
                  <div className="p-8 rounded-[2.5rem] bg-[#DEFF9A]/5 border border-[#DEFF9A]/20 flex flex-col items-center text-center group hover:bg-[#DEFF9A]/10 transition-all relative overflow-hidden">
                     <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-[#DEFF9A] to-transparent" />
@@ -359,9 +332,6 @@ export function AISkillsSupport() {
         )}
         {activeTool === 'grammar' && (
           <GrammarFixer onClose={() => setActiveTool(null)} />
-        )}
-        {activeTool === 'avatar' && (
-          <AvatarMatrix onClose={() => setActiveTool(null)} />
         )}
       </AnimatePresence>
 
