@@ -345,6 +345,7 @@ export function AITutor({ onClose, lessonId = 'CLASE_01' }: { onClose: () => voi
                <option value="CLASE_03" className="bg-[#061a1a] text-white">📘 Clase 03 — Apóstrofe</option>
                <option value="CLASE_04" className="bg-[#061a1a] text-white">📘 Clase 04 — Apóstrofe F2</option>
                <option value="CLASE_05" className="bg-[#061a1a] text-white">📘 Clase 05 — Posesivos</option>
+               <option value="CLASE_35" className="bg-[#061a1a] text-white">📘 Clase 35 — Apóstrofe Posesivo</option>
              </select>
           </div>
         </div>
