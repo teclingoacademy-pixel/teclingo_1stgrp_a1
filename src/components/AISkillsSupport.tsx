@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Waves, 
   Box, 
@@ -30,6 +30,7 @@ import { ExtracurricularModal } from './ExtracurricularModal';
 import { ARVIPModal } from './ARVIPModal';
 import { AvatarMatrix } from './tools/AvatarMatrix';
 import { useAppContext } from '../context/AppContext';
+import { apiUrl } from '../services/apiConfig';
 
 interface Skill {
   name: string;
@@ -51,6 +52,43 @@ export function AISkillsSupport() {
   const [activeTool, setActiveTool] = useState<string | null>(null);
   const [showExtraModal, setShowExtraModal] = useState(false);
   const [showARVIPModal, setShowARVIPModal] = useState(false);
+
+  // Cargar avatar y datos reales del usuario desde localStorage + API
+  const [userAvatar, setUserAvatar] = useState<string | null>(null);
+  const [userDisplayName, setUserDisplayName] = useState<string | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [userNivel, setUserNivel] = useState<string | null>(null);
+
+  useEffect(() => {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem('user') : null;
+    let email: string | null = null;
+    if (raw) {
+      try {
+        const u = JSON.parse(raw);
+        if (u?.nombre) setUserDisplayName(u.nombre);
+        if (u?.name) setUserDisplayName(u.name);
+        if (u?.avatar_url) setUserAvatar(u.avatar_url);
+        if (u?.avatar) setUserAvatar(u.avatar);
+        if (u?.user_id) setUserId(u.user_id);
+        if (u?.nivel_actual) setUserNivel(u.nivel_actual);
+        if (u?.email) email = u.email;
+        else if (u?.user_id) email = String(u.user_id).replace('_at_', '@').replace(/_/g, '.');
+      } catch {}
+    }
+    if (!email) return;
+    fetch(apiUrl('/api/user/' + encodeURIComponent(email)))
+      .then(r => r.ok ? r.json() : null)
+      .then(json => {
+        const u = json?.user || json;
+        if (u?.avatar) setUserAvatar(u.avatar);
+        if (u?.avatar_url) setUserAvatar(u.avatar_url);
+        if (u?.name) setUserDisplayName(u.name);
+        if (u?.nombre) setUserDisplayName(u.nombre);
+        if (u?.nivel) setUserNivel(u.nivel);
+        if (u?.nivel_actual) setUserNivel(u.nivel_actual);
+      })
+      .catch(() => {});
+  }, []);
 
   const handleARClick = () => {
     if (userProgress < 90) {
@@ -87,9 +125,9 @@ export function AISkillsSupport() {
            <div className="relative">
               <div className="w-32 h-32 rounded-full border-2 border-[#DEFF9A] p-1 shadow-[0_0_20px_rgba(222,255,154,0.3)]">
                  <img 
-                   src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80" 
+                   src={userAvatar || "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&q=80"} 
                    className="w-full h-full rounded-full object-cover"
-                   alt="Student"
+                   alt={userDisplayName || "Student"}
                  />
               </div>
               <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-[#DEFF9A] rounded-xl flex items-center justify-center text-[#061a1a] shadow-lg">
@@ -98,10 +136,10 @@ export function AISkillsSupport() {
            </div>
 
            <div className="text-center md:text-left flex-1 space-y-2">
-              <h2 className="text-3xl font-black text-white uppercase tracking-tighter">ALUMNO_01: ALEX RIVERA</h2>
+              <h2 className="text-3xl font-black text-white uppercase tracking-tighter">{userDisplayName ? `ALUMNO_01: ${userDisplayName.toUpperCase()}` : 'ALUMNO_01: ALEX RIVERA'}</h2>
               <div className="flex flex-wrap justify-center md:justify-start gap-4">
-                 <span className="text-[10px] font-black text-white/30 uppercase tracking-widest px-4 py-1.5 rounded-full bg-white/5 border border-white/5">ID: ROD-2026-STU01</span>
-                 <span className="text-[10px] font-black text-[#DEFF9A] uppercase tracking-widest px-4 py-1.5 rounded-full bg-[#DEFF9A]/10 border border-[#DEFF9A]/20 shadow-[0_0_15px_rgba(222,255,154,0.1)]">NIVEL ACTUAL: A1 (BEGINNER)</span>
+                 <span className="text-[10px] font-black text-white/30 uppercase tracking-widest px-4 py-1.5 rounded-full bg-white/5 border border-white/5">ID: {userId || 'ROD-2026-STU01'}</span>
+                 <span className="text-[10px] font-black text-[#DEFF9A] uppercase tracking-widest px-4 py-1.5 rounded-full bg-[#DEFF9A]/10 border border-[#DEFF9A]/20 shadow-[0_0_15px_rgba(222,255,154,0.1)]">NIVEL ACTUAL: {userNivel || 'A1'} (BEGINNER)</span>
               </div>
            </div>
         </div>
