@@ -48,6 +48,9 @@ export function AITutor({ onClose, lessonId = 'CLASE_01' }: { onClose: () => voi
   const [isLoading, setIsLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [aiContext, setAiContext] = useState<AIContext | null>(null);
+  const [contextType, setContextType] = useState<'general' | 'lesson'>('general');
+  const [selectedLessonId, setSelectedLessonId] = useState<string>(lessonId || 'CLASE_01');
+  const [grammarTopics, setGrammarTopics] = useState<Array<{ id: string; title: string; mcer: string }>>([]);
 
   // Library tab states
   const [selectedTopic, setSelectedTopic] = useState<GrammarTopic | null>(null);
@@ -72,6 +75,21 @@ export function AITutor({ onClose, lessonId = 'CLASE_01' }: { onClose: () => voi
       }
     };
     loadContext();
+  }, []);
+
+  // Cargar temas de la Biblioteca MCER para el selector de contexto
+  useEffect(() => {
+    let cancelled = false;
+    fetch(apiUrl('/api/ai/grammar-topics'))
+      .then((r) => r.ok ? r.json() : null)
+      .then((json) => {
+        if (cancelled) return;
+        if (json?.success && Array.isArray(json.data)) {
+          setGrammarTopics(json.data);
+        }
+      })
+      .catch((e) => console.warn('[AITutor] No se pudieron cargar grammar topics:', e));
+    return () => { cancelled = true; };
   }, []);
 
   const scrollToBottom = () => {
@@ -119,7 +137,8 @@ export function AITutor({ onClose, lessonId = 'CLASE_01' }: { onClose: () => voi
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: messageToSend,
-          lessonId: lessonId,
+          lessonId: contextType === 'lesson' ? selectedLessonId : undefined,
+          contextType: contextType,
           level: 'A1',
           mode: 'tutor',
           history: history.map(h => ({ role: h.role, content: h.parts?.[0]?.text || '' }))
@@ -304,9 +323,29 @@ export function AITutor({ onClose, lessonId = 'CLASE_01' }: { onClose: () => voi
              </button>
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 px-4 py-2.5 rounded-2xl bg-white/[0.03] border border-white/5 text-white/40">
-             <Clock size={13} className="text-[#DEFF9A]/60" />
-             <span className="text-[8px] font-black tracking-wider text-white/80">{lessonId.replace('CLASE_', 'Clase ')}</span>
+          <div className="flex items-center gap-2 px-3 py-2 rounded-2xl bg-white/[0.03] border border-white/5">
+             <span className="text-[8px] font-black uppercase tracking-widest text-white/40 shrink-0">Contexto</span>
+             <select
+               value={contextType === 'general' ? '__general__' : selectedLessonId}
+               onChange={(e) => {
+                 const v = e.target.value;
+                 if (v === '__general__') {
+                   setContextType('general');
+                 } else {
+                   setContextType('lesson');
+                   setSelectedLessonId(v);
+                 }
+               }}
+               className="bg-transparent text-white text-[10px] font-black uppercase tracking-wider cursor-pointer outline-none border-none"
+             >
+               <option value="__general__" className="bg-[#061a1a] text-white">📚 General (Biblioteca MCER)</option>
+               <option value="CLASE_00" className="bg-[#061a1a] text-white">📘 Clase 00 — Fase Cero</option>
+               <option value="CLASE_01" className="bg-[#061a1a] text-white">📘 Clase 01 — Verbo To Be</option>
+               <option value="CLASE_02" className="bg-[#061a1a] text-white">📘 Clase 02 — Auxiliares</option>
+               <option value="CLASE_03" className="bg-[#061a1a] text-white">📘 Clase 03 — Apóstrofe</option>
+               <option value="CLASE_04" className="bg-[#061a1a] text-white">📘 Clase 04 — Apóstrofe F2</option>
+               <option value="CLASE_05" className="bg-[#061a1a] text-white">📘 Clase 05 — Posesivos</option>
+             </select>
           </div>
         </div>
       </header>

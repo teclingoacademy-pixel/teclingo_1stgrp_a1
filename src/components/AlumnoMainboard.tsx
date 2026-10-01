@@ -59,6 +59,7 @@ import { ExtracurricularModal } from './ExtracurricularModal';
 import { WhatsAppButton, WHATSAPP_TEACHER_MESSAGE } from './WhatsAppButton';
 import { useAppContext } from '../context/AppContext';
 import { useStudentProgress } from '../hooks/useStudentProgress';
+import { stopAllAudio } from '../utils/workbook/audioSupervisor';
 import { useMemo } from 'react';
 import { LibroVirtual } from './LibroVirtual';
 import { ProfileOnboardingModal, isProfileComplete } from './ProfileOnboardingModal';
@@ -93,6 +94,14 @@ interface AlumnoMainboardProps {
   const [studentProfileData, setStudentProfileData] = useState<Record<string, unknown>>({});
   const [selectedLessonId, setSelectedLessonId] = useState<string>('A1_C01');
   const { currentWeek: studentCurrentWeek } = useStudentProgress(userEmail || undefined);
+
+  // FIX 2026-09-30: al cambiar de vista/página se detiene TODO el TTS/audio activo
+  // (workbook, tools, voces del backend) para que no siga sonando en la vista nueva.
+  useEffect(() => {
+    return () => {
+      stopAllAudio();
+    };
+  }, [currentView]);
 
   // FIX 2026-09-26: Navegacion a clase especifica
   const handleSelectClass = (claseId: string) => {

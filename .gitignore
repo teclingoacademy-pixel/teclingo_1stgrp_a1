@@ -32,3 +32,10 @@ backups_*/
 *.xlsx
 TECLINGO_IDENTITY_LAKE_V1*.xlsx
 _matrix_test.cjs
+
+# Archivos temporales de scripts
+*.backup
+*.backup-*
+apply-*.ps1
+*.ps1
+Comandos para reiniciar servicios.txt

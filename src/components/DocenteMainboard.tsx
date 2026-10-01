@@ -49,6 +49,7 @@ import { DocenteEvidencePanel } from './DocenteEvidencePanel';
 import { FoliosDocente } from './FoliosDocente';
 import { DocenteReconocimiento } from './DocenteReconocimiento';
 import { LibroVirtual } from './LibroVirtual';
+import { stopAllAudio } from '../utils/workbook/audioSupervisor';
 import { AvailabilityModule } from './AvailabilityModule';
 import { InstitutionalCalendar } from './InstitutionalCalendar';
 import { TeacherSchedules } from './TeacherSchedules';
@@ -110,6 +111,14 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
   } = useAppContext();
   const [currentView, setCurrentView] = useState('dashboard');
   const [targetChatId, setTargetChatId] = useState<string | null>(null);
+
+  // FIX 2026-09-30: al cambiar de vista/página se detiene TODO el TTS/audio activo
+  // (workbook, tools, voces del backend) para que no siga sonando en la vista nueva.
+  useEffect(() => {
+    return () => {
+      stopAllAudio();
+    };
+  }, [currentView]);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [teacherProfileData, setTeacherProfileData] = useState<Record<string, unknown>>({});
   

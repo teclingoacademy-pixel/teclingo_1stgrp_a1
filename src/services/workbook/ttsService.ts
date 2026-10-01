@@ -30,6 +30,10 @@ let pendingAutoplay: { text: string; options?: PlayAudioOptions | (() => void) }
 let hasUserInteracted = false;
 let currentAudioElement: HTMLAudioElement | null = null;
 let playGeneration = 0;
+// FIX 2026-09-30: fetch del backend en vuelo. Si el usuario cambia de página
+// mientras la petición viaja, stopAudio() aborta el fetch para que NUNCA llegue
+// a crearse ni a reproducirse el Audio() en la vista nueva.
+let currentTtsAbort: AbortController | null = null;
 
 // ─────────────────────────────────────────────────────────────
 // Utilidades
@@ -149,6 +153,12 @@ export const stopAudio = (): void => {
   playGeneration++;
   pendingAutoplay = null;
   clearSpeechKeepAlive();
+  // Aborta el fetch del backend para que no se cree un Audio() "fantasma"
+  // que arranque a sonar después de cambiar de página.
+  if (currentTtsAbort) {
+    try { currentTtsAbort.abort(); } catch { /* ya abortado */ }
+    currentTtsAbort = null;
+  }
   stopCurrentAudioElement();
   if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
     try {
@@ -198,8 +208,11 @@ export const isValidEnglishForTTS = (text: string): boolean => {
 const tryBackendTTS = async (
   cleanText: string,
   lang: string,
-  opts: PlayAudioOptions
+  opts: PlayAudioOptions,
+  isCurrent: () => boolean
 ): Promise<boolean> => {
+  const controller = new AbortController();
+  currentTtsAbort = controller;
   try {
     const res = await fetch(apiUrl('/api/tts'), {
       method: 'POST',
@@ -209,11 +222,17 @@ const tryBackendTTS = async (
         gender: opts.voiceGender || 'female',
         lang, // ← ahora respeta el idioma del segmento
       }),
+      signal: controller.signal,
     });
 
     if (!res.ok) return false;
 
     const blob = await res.blob();
+
+    // FIX 2026-09-30: el usuario cambió de página (o lanzó otro TTS) mientras
+    // el fetch viajaba. No se reproduce nada.
+    if (!isCurrent()) return false;
+
     const audioUrl = URL.createObjectURL(blob);
     const audio = new Audio(audioUrl);
     currentAudioElement = audio;
@@ -229,6 +248,7 @@ const tryBackendTTS = async (
         if (safetyTimer) { clearTimeout(safetyTimer); safetyTimer = null; }
         try { URL.revokeObjectURL(audioUrl); } catch {}
         if (currentAudioElement === audio) currentAudioElement = null;
+        if (currentTtsAbort === controller) currentTtsAbort = null;
         opts.onEnd?.();
         resolve(ok);
       };
@@ -247,12 +267,21 @@ const tryBackendTTS = async (
       };
       armSafety(30000);
 
+      // Última barrera: si stopAudio() corrió entre la creación y el play(),
+      // no se reproduce (el elemento ya habría sido pausado/limpiado).
+      if (!isCurrent()) {
+        finish(false);
+        return;
+      }
+
       audio.play()
         .then(() => { opts.onStart?.(); })
         .catch(() => finish(false));
     });
   } catch {
     return false;
+  } finally {
+    if (currentTtsAbort === controller) currentTtsAbort = null;
   }
 };
 
@@ -316,7 +345,8 @@ const pickVoice = (
 const speakSegment = (
   segment: BilingualSegment,
   opts: PlayAudioOptions,
-  isLast: boolean
+  isLast: boolean,
+  isCurrent: () => boolean
 ): Promise<void> => {
   return new Promise<void>((resolve) => {
     const utterance = new SpeechSynthesisUtterance(segment.text);
@@ -326,6 +356,12 @@ const speakSegment = (
       opts.pitch ?? (opts.voiceGender === 'male' ? 0.8 : segment.lang === 'es-MX' ? 1.0 : 1.1);
 
     const selectAndSpeak = () => {
+      // FIX 2026-09-30: la espera de voces (hasta 300 ms) puede sobrevivir a un
+      // cambio de página. Si ya no es la reproducción vigente, no se habla.
+      if (!isCurrent()) {
+        resolve();
+        return;
+      }
       const voices = window.speechSynthesis.getVoices();
       if (voices && voices.length > 0) {
         const voice = pickVoice(voices, segment.lang, opts.voiceGender || 'female');
@@ -426,17 +462,19 @@ export const playAudio = (
       const seg = segments[i];
       const isFirst = i === 0;
       const isLast = i === segments.length - 1;
+      // ¿Sigue vigente esta reproducción? Se recalcula en cada await.
+      const isCurrent = () => myGeneration === playGeneration;
 
       // 1. Backend
       const played = await tryBackendTTS(seg.text, seg.lang, {
         ...opts,
         onStart: isFirst ? opts.onStart : undefined,
-      });
+      }, isCurrent);
       if (myGeneration !== playGeneration) return;
       if (played) continue;
 
       // 2. Fallback Web Speech
-      await speakSegment(seg, opts, isLast);
+      await speakSegment(seg, opts, isLast, isCurrent);
       if (myGeneration !== playGeneration) return;
     }
   })().catch((err) => {

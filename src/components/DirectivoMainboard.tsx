@@ -62,6 +62,7 @@ import { GruposInglesDirector } from './GruposInglesDirector';
 import { InstitutionalCalendar } from './InstitutionalCalendar';
 import { RealTimeMonitorPanel } from './RealTimeMonitorPanel';
 import { LibroVirtual } from './LibroVirtual';
+import { stopAllAudio } from '../utils/workbook/audioSupervisor';
 import { AccessControlModule } from './AccessControlModule';
 import { AsistenciasMaster } from './AsistenciasMaster';
 import { ProfileOnboardingModal, isProfileComplete } from './ProfileOnboardingModal';
@@ -103,6 +104,15 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
   } = useAppContext();
   const [currentView, setCurrentView] = useState('dashboard');
   const [selectedGroupId, setSelectedGroupId] = useState<string | undefined>(undefined);
+
+  // FIX 2026-09-30: al cambiar de vista/página se detiene TODO el TTS/audio activo
+  // (workbook, tools, voces del backend) para que no siga sonando en la vista nueva.
+  useEffect(() => {
+    return () => {
+      stopAllAudio();
+    };
+  }, [currentView]);
+
   const [targetChatId, setTargetChatId] = useState<string | null>(null);
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [directorProfileData, setDirectorProfileData] = useState<Record<string, unknown>>({});

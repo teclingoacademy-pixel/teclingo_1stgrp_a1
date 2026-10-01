@@ -5,6 +5,7 @@
 
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { apiUrl } from '../../services/apiConfig';
+import { registerAudioElement, unregisterAudioElement } from '../../utils/workbook/audioSupervisor';
 import { 
   Headphones, 
   ChevronLeft, 
@@ -167,6 +168,20 @@ export function ListeningLab({ onClose }: { onClose: () => void }) {
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
+  // FIX 2026-09-30: si el usuario cambia de página con audio reproduciéndose,
+  // se pausa y se retira del registro global (audioSupervisor) para que no
+  // quede un TTS sonando detrás de la vista nueva.
+  useEffect(() => {
+    return () => {
+      const el = audioRef.current;
+      if (el) {
+        try { el.pause(); } catch { /* ya liberado */ }
+        unregisterAudioElement(el);
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
   const handlePlay = async () => {
     if (isPlaying) {
       audioRef.current?.pause();
@@ -197,16 +212,19 @@ export function ListeningLab({ onClose }: { onClose: () => void }) {
       const audio = new Audio(audioUrl);
       audio.playbackRate = speed;
       audioRef.current = audio;
+      registerAudioElement(audio);
 
       audio.onended = () => {
         URL.revokeObjectURL(audioUrl);
         setIsPlaying(false);
+        unregisterAudioElement(audio);
         audioRef.current = null;
       };
 
       audio.onerror = () => {
         URL.revokeObjectURL(audioUrl);
         setIsPlaying(false);
+        unregisterAudioElement(audio);
         audioRef.current = null;
       };
 
