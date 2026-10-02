@@ -51,13 +51,15 @@ export async function callOllama(
       model: OLLAMA_MODEL,
       messages,
       stream: false,
+      keep_alive: '24h',
       // `format: 'json'` es el equivalente de response_format de Groq. Un 3B
       // tiende a envolver el JSON en prosa o en vallas markdown, por eso el
       // formato alone no alcanza y hay que limpiar la respuesta aparte.
       ...(opts.json ? { format: 'json' } : {}),
       options: {
         temperature: opts.temperature ?? 0.4,
-        num_ctx: 4096,
+        num_predict: 120,
+        num_ctx: 2048,
         ...(process.env.OLLAMA_NUM_CTX ? { num_ctx: Number(process.env.OLLAMA_NUM_CTX) } : {}),
       },
     }),

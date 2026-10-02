@@ -133,7 +133,7 @@ y cierra con una comprobacion breve de que lo entendio. Responde en español y d
 inglesa cuando sea relevante.`
     : `Eres el tutor de ingles de TECLINGO para nivel ${level}.
 Ayudas al alumno a practicar. Responde en español, incluye la construccion inglesa
-correcta y da un ejemplo corto. No te desvies del tema de la clase.`;
+correcta y da un ejemplo corto. Se BREVE: maximo 4 lineas. No repitas la pregunta.`;
 
   const blocks: string[] = [persona, ''];
 
@@ -203,7 +203,7 @@ router.post('/ai/ask', async (req, res) => {
         ...normalizeHistory(history),
         { role: 'user', content: question },
       ];
-      const answer = await callOllama(messages);
+      console.log("[ai/ask] system prompt chars:", system.length, "history msgs:", normalizeHistory(history).length); const answer = await callOllama(messages);
       return res.json({
         success: true,
         data: {
@@ -227,7 +227,7 @@ router.post('/ai/ask', async (req, res) => {
       ...normalizeHistory(history),
       { role: 'user', content: question },
     ];
-    const answer = await callOllama(messages);
+    console.log("[ai/ask] system prompt chars:", system.length, "history msgs:", normalizeHistory(history).length); const answer = await callOllama(messages);
     return res.json({
       success: true,
       data: {

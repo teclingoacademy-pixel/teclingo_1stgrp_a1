@@ -517,6 +517,7 @@ router.get('/v1/textos-base', async (req, res) => {
       titulo: text.title,
       contenido_texto: text.content,
       contenido: text.content,
+      translation: text.translation,
 
       word_count: words,
       palabras_count: words,

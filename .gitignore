@@ -39,3 +39,16 @@ _matrix_test.cjs
 apply-*.ps1
 *.ps1
 Comandos para reiniciar servicios.txt
+# Backups de scripts locales (NO subir)
+*.backup
+*.backup-*
+*.pre-*
+add-video-*.cjs
+check-video-*.cjs
+fix-*.cjs
+migrate-*.cjs
+delete-*.cjs
+seed-*.cjs
+list-*.cjs
+verify-*.cjs
+cloudflared.deb
