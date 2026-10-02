@@ -43,6 +43,7 @@ export function PronunciationAnalyzerV2({
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
+  const timeoutRef = useRef<number | null>(null);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -54,13 +55,19 @@ export function PronunciationAnalyzerV2({
         recognition.lang = 'en-US';
         recognition.maxAlternatives = 1;
         recognition.onresult = (event: any) => {
-          const resultTranscript = Array.from(event.results)
-            .map((res: any) => res[0].transcript)
-            .join(' ');
-          setTranscript(resultTranscript);
+          let full = '';
+          for (let i = 0; i < event.results.length; i++) {
+            full += event.results[i][0].transcript + ' ';
+          }
+          setTranscript(full.trim());
         };
-        recognition.onerror = () => setIsRecording(false);
-        recognition.onend = () => setIsRecording(false);
+        recognition.onerror = (event: any) => {
+          console.warn('[AnalyzerV2] onerror:', event.error);
+          setIsRecording(false);
+        };
+        recognition.onend = () => {
+          setIsRecording(false);
+        };
         recognitionRef.current = recognition;
       } catch (e) {
         console.warn('[AnalyzerV2] SpeechRecognition no disponible:', e);
@@ -152,6 +159,12 @@ export function PronunciationAnalyzerV2({
     setScore(null);
     setMissedWords([]);
     setSavedStatus('idle');
+    // Auto-stop despues de 8s si no se ha detenido manualmente
+    if (timeoutRef.current) window.clearTimeout(timeoutRef.current);
+    timeoutRef.current = window.setTimeout(() => {
+      console.warn('[AnalyzerV2] Auto-stop por timeout (8s)');
+      handleStopRecordingRef.current?.();
+    }, 8000);
     await startAudioVisualization();
     if (recognitionRef.current) {
       try { recognitionRef.current.start(); } catch (e) { console.warn(e); }
@@ -159,6 +172,10 @@ export function PronunciationAnalyzerV2({
   };
 
   const handleStopRecording = () => {
+    if (timeoutRef.current) {
+      window.clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
     setIsRecording(false);
     setIsProcessing(true);
     stopAudioVisualization();
@@ -209,6 +226,9 @@ export function PronunciationAnalyzerV2({
       }
     }, 500);
   };
+
+  // Registrar la funcion para que el timeout la pueda llamar
+  handleStopRecordingRef.current = handleStopRecording;
 
   const handleRetry = () => {
     setTranscript('');
