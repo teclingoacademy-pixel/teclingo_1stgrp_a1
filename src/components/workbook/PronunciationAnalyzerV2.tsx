@@ -44,6 +44,7 @@ export function PronunciationAnalyzerV2({
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animationRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
+  const handleStopRecordingRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
