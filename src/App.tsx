@@ -12,11 +12,15 @@ import { UserRole } from './components/MasterSwitcher';
 import { motion, AnimatePresence } from 'motion/react';
 import { useState, useEffect } from 'react';
 import { useAppContext } from './context/AppContext';
+import { useAnalytics } from './hooks/useAnalytics';
 import { consultarIdentidadEnLake } from './services/identityService';
 import { ShieldAlert, Zap, AlertTriangle } from 'lucide-react';
 
 export default function App() {
-  const { maintenanceMode, currentRole, setCurrentRole, setIsDemoMode } = useAppContext();
+  const { maintenanceMode, currentRole, setCurrentRole, setIsDemoMode, userEmail } = useAppContext();
+
+  // Analytics: registrar sesiones y eventos de uso
+  useAnalytics(userEmail);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
