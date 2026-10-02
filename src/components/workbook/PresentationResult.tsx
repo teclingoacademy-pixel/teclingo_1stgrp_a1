@@ -2,13 +2,14 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  * PresentationResult.tsx
- * Muestra la presentación generada con botón de escuchar y editar.
+ * Muestra la presentacion generada con boton de escuchar, editar y practicar.
  */
 
 import { useState } from 'react';
-import { Volume2, Edit3, CheckCircle2 } from 'lucide-react';
+import { Volume2, Edit3, CheckCircle2, Mic } from 'lucide-react';
 import type { PresentationData } from '../../services/presentationService';
 import { playAudio } from '../../services/workbook/ttsService';
+import { PronunciationAnalyzer } from './PronunciationAnalyzer';
 
 interface Props {
   presentation: PresentationData;
@@ -16,8 +17,8 @@ interface Props {
 }
 
 const SECTION_LABELS = [
-  { key: 'section1English', label: '1. Introducción' },
-  { key: 'section2English', label: '2. Ocupación y vida' },
+  { key: 'section1English', label: '1. Introduccion' },
+  { key: 'section2English', label: '2. Ocupacion y vida' },
   { key: 'section3English', label: '3. Rutina diaria' },
   { key: 'section4English', label: '4. Algo que hiciste' },
   { key: 'section5English', label: '5. Planes futuros' },
@@ -25,6 +26,7 @@ const SECTION_LABELS = [
 
 export function PresentationResult({ presentation, onEdit }: Props) {
   const [playing, setPlaying] = useState(false);
+  const [practicingSection, setPracticingSection] = useState<string | null>(null);
 
   const handlePlayAll = () => {
     if (playing) return;
@@ -42,11 +44,11 @@ export function PresentationResult({ presentation, onEdit }: Props) {
         <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-green-500/10 border border-green-500/30">
           <CheckCircle2 size={14} className="text-green-400" />
           <span className="text-[10px] font-black uppercase tracking-widest text-green-400">
-            Presentación lista
+            Presentacion lista
           </span>
         </div>
         <h2 className="text-2xl sm:text-3xl font-black text-white uppercase tracking-tight">
-          Tu Presentación en Inglés
+          Tu Presentacion en Ingles
         </h2>
       </div>
 
@@ -57,7 +59,7 @@ export function PresentationResult({ presentation, onEdit }: Props) {
           className="inline-flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#22D3EE] hover:bg-[#22D3EE]/90 disabled:opacity-50 text-[#061a1a] font-black uppercase tracking-widest text-xs transition-all cursor-pointer"
         >
           <Volume2 size={16} />
-          {playing ? 'Reproduciendo...' : 'Escuchar mi presentación'}
+          {playing ? 'Reproduciendo...' : 'Escuchar mi presentacion'}
         </button>
         <button
           onClick={onEdit}
@@ -78,17 +80,31 @@ export function PresentationResult({ presentation, onEdit }: Props) {
                 <span className="text-[10px] font-black uppercase tracking-widest text-[#DEFF9A]">
                   {label}
                 </span>
-                <button
-                  onClick={() => playAudio(value, { forceLang: 'en-US' })}
-                  className="p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
-                  title="Escuchar sección"
-                >
-                  <Volume2 size={14} className="text-white/60" />
-                </button>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => playAudio(value, { forceLang: 'en-US' })}
+                    className="p-1.5 rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+                    title="Escuchar seccion"
+                  >
+                    <Volume2 size={14} className="text-white/60" />
+                  </button>
+                  <button
+                    onClick={() => setPracticingSection(practicingSection === key ? null : key)}
+                    className="p-1.5 rounded-lg transition-colors cursor-pointer hover:bg-white/10 text-white/60"
+                    title="Practicar pronunciacion"
+                  >
+                    <Mic size={14} />
+                  </button>
+                </div>
               </div>
               <p className="text-white text-sm leading-relaxed whitespace-pre-line">
                 {value}
               </p>
+              {practicingSection === key && (
+                <div className="mt-4 pt-4 border-t border-white/10">
+                  <PronunciationAnalyzer targetPhrase={value} />
+                </div>
+              )}
             </div>
           );
         })}
