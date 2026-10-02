@@ -9,7 +9,7 @@ import { useState } from 'react';
 import { Volume2, Edit3, CheckCircle2, Mic } from 'lucide-react';
 import type { PresentationData } from '../../services/presentationService';
 import { playAudio } from '../../services/workbook/ttsService';
-import { PronunciationAnalyzer } from './PronunciationAnalyzer';
+import { PronunciationAnalyzerV2 } from './PronunciationAnalyzerV2';
 
 interface Props {
   presentation: PresentationData;
@@ -102,7 +102,7 @@ export function PresentationResult({ presentation, onEdit }: Props) {
               </p>
               {practicingSection === key && (
                 <div className="mt-4 pt-4 border-t border-white/10">
-                  <PronunciationAnalyzer targetPhrase={value} />
+                  <PronunciationAnalyzerV2 targetPhrase={value} source="presentation" sectionKey={key} onScore={(s, t, m) => console.log(`[Presentacion] ${key}: ${s}% - ${t}`, m)} />
                 </div>
               )}
             </div>
@@ -114,3 +114,4 @@ export function PresentationResult({ presentation, onEdit }: Props) {
 }
 
 export default PresentationResult;
+
