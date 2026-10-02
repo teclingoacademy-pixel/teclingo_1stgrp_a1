@@ -188,15 +188,14 @@ export const VocabularySection: React.FC<VocabularySectionProps> = ({
   const pronouns = words.filter(
     (w) =>
       w.category === 'pronombre' ||
-      ['I', 'you', 'he', 'she', 'it', 'we', 'they'].includes(w.word)
+      w.type === 'pronoun' ||
+      ['I', 'You', 'He', 'She', 'It', 'We', 'They'].includes(w.word)
   );
 
   const nouns = words.filter(
     (w) =>
       w.category === 'sustantivo' ||
-      ['student', 'students', 'book', 'books', 'teacher', 'friend', 'classroom'].includes(
-        w.word
-      )
+      w.type === 'noun'
   );
 
   const hasCategorization = pronouns.length > 0 && nouns.length > 0;
