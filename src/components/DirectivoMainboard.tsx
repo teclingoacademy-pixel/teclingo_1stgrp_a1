@@ -44,6 +44,7 @@ import { useAppContext } from '../context/AppContext';
 import { MasterSwitcher, UserRole } from './MasterSwitcher';
 import { Sidebar, SidebarItem } from './Sidebar';
 import { GlassCard } from './GlassCard';
+import { DirectorAnalytics } from './DirectorAnalytics';
 import { AcademicBI } from './AcademicBI';
 import { OperationalCommand } from './OperationalCommand';
 import { InnovationAlerts } from './InnovationAlerts';
@@ -247,6 +248,7 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
 
   const sidebarItems: SidebarItem[] = [
     { id: 'dashboard', label: 'Command Center', icon: LayoutDashboard, category: 'Soporte & Global', isPrincipal: true },
+    { id: 'analytics', label: 'Analytics', icon: BarChart3, badge: 'NUEVO', category: 'Soporte & Global' },
     { id: 'mensajes', label: 'Communication', icon: MessageSquare, category: 'Soporte & Global' },
     { id: 'settings', label: 'Settings', icon: SettingsIcon, category: 'Soporte & Global' },
 
@@ -543,6 +545,8 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
                      </div>
                   </div>
                 </div>
+              ) : currentView === 'analytics' ? (
+                <DirectorAnalytics />
               ) : currentView === 'bi' ? (
                 <AcademicBI />
               ) : currentView === 'biblioteca' ? (
