@@ -43,6 +43,10 @@ import { InstitutionalCalendar } from './InstitutionalCalendar';
 import { FoliosDocente } from './FoliosDocente';
 import { AchievementWall } from './AchievementWall';
 import { AISkillsSupport } from './AISkillsSupport';
+import { PresentationForm } from './workbook/PresentationForm';
+import { PresentationResult } from './workbook/PresentationResult';
+import { generatePresentation, getPresentation, PresentationData } from '../services/presentationService';
+import { apiUrl } from '../services/apiConfig';
 import { StudentGroup } from './StudentGroup';
 import { UnirseGrupoCard } from './UnirseGrupoCard';
 import { PDPModule } from './PDPModule';
@@ -93,6 +97,9 @@ interface AlumnoMainboardProps {
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [studentProfileData, setStudentProfileData] = useState<Record<string, unknown>>({});
   const [selectedLessonId, setSelectedLessonId] = useState<string>('A1_C01');
+  const [presentationData, setPresentationData] = useState<PresentationData | null>(null);
+  const [presentationLoading, setPresentationLoading] = useState(false);
+  const [presentationEditing, setPresentationEditing] = useState(false);
   const { currentWeek: studentCurrentWeek } = useStudentProgress(userEmail || undefined);
 
   // FIX 2026-09-30: al cambiar de vista/página se detiene TODO el TTS/audio activo
@@ -115,6 +122,58 @@ interface AlumnoMainboardProps {
     const claseId = 'A1_C' + String(week).padStart(2, '0');
     setSelectedLessonId(claseId);
     setCurrentView('libro-virtual');
+  };
+
+  // Cargar presentación guardada del alumno cuando entra a la vista
+  useEffect(() => {
+    if (!userEmail || currentView !== 'presentation') return;
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const userRes = await fetch(apiUrl('/api/user/' + encodeURIComponent(userEmail)));
+        const userJson = await userRes.json();
+        const userId = userJson?.user?.id;
+        if (!userId || cancelled) return;
+        const result = await getPresentation(userId);
+        if (!cancelled && result.success && result.data) {
+          setPresentationData(result.data);
+        }
+      } catch (err) {
+        console.warn('[AlumnoMainboard] Error cargando presentación:', err);
+      }
+    };
+    load();
+    return () => { cancelled = true; };
+  }, [userEmail, currentView]);
+
+  // Handler para generar la presentación
+  const handleGeneratePresentation = async (sections: {
+    section1Spanish: string;
+    section2Spanish: string;
+    section3Spanish: string;
+    section4Spanish: string;
+    section5Spanish: string;
+  }) => {
+    if (!userEmail) return;
+    setPresentationLoading(true);
+    try {
+      const userRes = await fetch(apiUrl('/api/user/' + encodeURIComponent(userEmail)));
+      const userJson = await userRes.json();
+      const userId = userJson?.user?.id;
+      if (!userId) throw new Error('Usuario no encontrado');
+      const result = await generatePresentation(userId, sections);
+      if (result.success && result.data) {
+        setPresentationData(result.data);
+        setPresentationEditing(false);
+      } else {
+        alert(result.error || 'Error al generar la presentación');
+      }
+    } catch (err) {
+      console.error('[AlumnoMainboard] Error generando presentación:', err);
+      alert('Error de conexión al generar la presentación');
+    } finally {
+      setPresentationLoading(false);
+    }
   };
 
   const handleNavigateToFullChat = (userId: string) => {
@@ -169,6 +228,7 @@ interface AlumnoMainboardProps {
     { id: 'progress-map', label: t('progress_map'), icon: Map, badge: 'IA', category: 'Operaciones', isPrincipal: true },
     { id: 'libro-virtual', label: 'LIBRO VIRTUAL', icon: BookOpen, badge: 'A1', category: 'Operaciones' },
     { id: 'pdp', label: t('pdp'), icon: BarChart3, category: 'Operaciones' },
+    { id: 'presentation', label: 'Mi Presentación', icon: Sparkles, badge: 'NUEVO', category: 'Operaciones', isPrincipal: true },
 
     { id: 'ai-support', label: t('ai_support'), icon: Sparkles, badge: t('new'), category: 'Monitoreo & Innovación', isPrincipal: true },
     { 
@@ -432,6 +492,21 @@ interface AlumnoMainboardProps {
                 </div>
               ) : currentView === 'libro-virtual' ? (
                 <LibroVirtual role="alumno" lessonId={selectedLessonId} />
+              ) : currentView === 'presentation' ? (
+                presentationLoading ? (
+                  <div className='text-center text-white/50 py-20'>Cargando tu presentación...</div>
+                ) : (presentationEditing || !presentationData?.fullPresentation) ? (
+                  <PresentationForm
+                    onSubmit={handleGeneratePresentation}
+                    loading={presentationLoading}
+                    initialValues={presentationData || undefined}
+                  />
+                ) : (
+                  <PresentationResult
+                    presentation={presentationData}
+                    onEdit={() => setPresentationEditing(true)}
+                  />
+                )
               ) : currentView === 'pdp' ? (
                 <PDPModule onOpenProgressMap={() => setCurrentView('progress-map')} />
               ) : currentView === 'grupo' ? (
