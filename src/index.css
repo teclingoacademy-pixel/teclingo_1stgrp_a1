@@ -180,3 +180,22 @@
     display: none;
   }
 }
+
+/* ============================================================
+   FIX GLOBAL - Ocultar scrollbar del navegador (fuera del layer)
+   Se aplica a html y body siempre. No depende de clases.
+   ============================================================ */
+html::-webkit-scrollbar,
+body::-webkit-scrollbar {
+  display: none !important;
+  width: 0 !important;
+  height: 0 !important;
+  background: transparent !important;
+}
+
+html, body {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+}
