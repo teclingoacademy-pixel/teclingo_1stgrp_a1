@@ -414,8 +414,8 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
       />
 
       {/* Main Content */}
-      <main className={`flex-1 flex flex-col min-h-0 ${isSidebarOpen ? 'overflow-hidden' : 'overflow-y-auto'} custom-scrollbar pt-20 lg:pt-0 transition-all duration-300 relative h-screen lg:h-auto`}>
-        <div className="p-6 md:p-8 lg:p-12 max-w-[1400px] mx-auto w-full space-y-8 md:space-y-12 pb-48">
+      <main className={`flex-1 flex flex-col min-h-0 ${isSidebarOpen ? 'overflow-hidden' : 'overflow-y-auto overflow-x-hidden'} custom-scrollbar pt-20 lg:pt-0 transition-all duration-300 relative h-screen lg:h-auto`}>
+        <div className="p-6 md:p-8 lg:p-12 max-w-[1400px] mx-auto w-full space-y-8 md:space-y-12 pb-48 min-w-0 overflow-x-hidden">
           <AnimatePresence mode="wait">
             <motion.div
               key={currentView}
@@ -433,12 +433,12 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
                       onDismiss={() => setShowNotifBanner(false)}
                     />
                   )}
-                  <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
+                  <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 w-full min-w-0">
                     <div>
                       <h2 className="text-[#DEFF9A] text-[10px] font-black uppercase tracking-[0.4em] mb-2 md:mb-3">Hola, Alumno_01!</h2>
                       <h1 className="text-3xl md:text-4xl font-black text-white bevel-text uppercase tracking-tight">Good Morning.</h1>
                     </div>
-                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto">
+                    <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-4 w-full md:w-auto min-w-0">
                         <WhatsAppButton
                           label="Teacher Online"
                           sublabel="WhatsApp 8461108789"
@@ -605,8 +605,8 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
                                 </div>
                              ) : (
                                 <>
-                                   <div className="flex justify-between items-center text-[9px] font-black text-white/30 uppercase tracking-[0.2em] pb-4 border-b border-white/5">
-                                      <span>{nextClass.nextClass.relativeLabel} • {nextClass.nextClass.time12h}</span>
+                                   <div className="flex justify-between items-center text-[9px] font-black text-white/30 uppercase tracking-[0.2em] pb-4 border-b border-white/5 gap-2 min-w-0">
+                                      <span className="truncate">{nextClass.nextClass.relativeLabel} • {nextClass.nextClass.time12h}</span>
                                       <span>{nextClass.nextClass.location}</span>
                                    </div>
                                    <div className="space-y-3 pt-2">
