@@ -37,6 +37,49 @@ export function MessageNotificationBell({ onNavigateToChat, onNavigateToCalendar
   const [minimized, setMinimized] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
+  // ── Drag & Drop: campana reubicable manualmente ──
+  const POSITION_KEY = 'teclingo_bell_position';
+  const [position, setPosition] = useState<{ x: number; y: number }>(() => {
+    try {
+      const saved = localStorage.getItem(POSITION_KEY);
+      if (saved) {
+        const p = JSON.parse(saved);
+        if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
+      }
+    } catch { /* noop */ }
+    return { x: (typeof window !== 'undefined' ? window.innerWidth : 1200) - 80, y: (typeof window !== 'undefined' ? window.innerHeight : 800) - 80 };
+  });
+  const [isDragging, setIsDragging] = useState(false);
+  const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
+
+  useEffect(() => {
+    try { localStorage.setItem(POSITION_KEY, JSON.stringify(position)); } catch { /* noop */ }
+  }, [position]);
+
+  const handlePointerDown = (e: React.PointerEvent) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button')) return;
+    setIsDragging(true);
+    dragOffsetRef.current = { x: e.clientX - position.x, y: e.clientY - position.y };
+    try { (e.target as HTMLElement).setPointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!isDragging || !dragOffsetRef.current) return;
+    const newX = e.clientX - dragOffsetRef.current.x;
+    const newY = e.clientY - dragOffsetRef.current.y;
+    const maxX = window.innerWidth - 60;
+    const maxY = window.innerHeight - 60;
+    setPosition({ x: Math.max(0, Math.min(newX, maxX)), y: Math.max(0, Math.min(newY, maxY)) });
+  };
+
+  const handlePointerUp = (e: React.PointerEvent) => {
+    setIsDragging(false);
+    dragOffsetRef.current = null;
+    try { (e.target as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ }
+  };
+
+
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [acknowledgedEvents, setAcknowledgedEvents] = useState<Set<string>>(() => getAcknowledgedEvents());
 
@@ -131,7 +174,15 @@ export function MessageNotificationBell({ onNavigateToChat, onNavigateToCalendar
 
   if (minimized) {
     return (
-      <div ref={containerRef} className="fixed top-4 right-4 z-[200]">
+      <div
+        ref={containerRef}
+        className={`fixed z-[200] ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+        style={{ left: `${position.x}px`, top: `${position.y}px`, touchAction: 'none' }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={handlePointerUp}
+        onPointerCancel={handlePointerUp}
+      >
         <button
           onClick={() => { setMinimized(false); setExpanded(true); }}
           title="Mostrar notificaciones"
@@ -149,7 +200,15 @@ export function MessageNotificationBell({ onNavigateToChat, onNavigateToCalendar
   }
 
   return (
-    <div ref={containerRef} className="fixed top-4 right-4 z-[200]">
+    <div
+      ref={containerRef}
+      className={`fixed z-[200] ${isDragging ? 'cursor-grabbing' : 'cursor-grab'}`}
+      style={{ left: `${position.x}px`, top: `${position.y}px`, touchAction: 'none' }}
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
       <div className="flex flex-col items-end gap-2">
         {/* Bell Button */}
         <button
