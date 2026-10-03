@@ -12,6 +12,7 @@ import toolRoutes from "./api/toolRoutes";
 import presentationRoutes from "./api/presentationRoutes";
 import pronunciationRoutes from "./api/pronunciationRoutes";
 import analyticsRoutes from "./api/analyticsRoutes";
+import notificationRoutes from "./api/notificationRoutes";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -68,6 +69,7 @@ app.use("/api", toolRoutes);
 app.use("/api", presentationRoutes);
 app.use("/api", pronunciationRoutes);
 app.use("/api", analyticsRoutes);
+app.use("/api", notificationRoutes);
 
 function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password).digest("hex");

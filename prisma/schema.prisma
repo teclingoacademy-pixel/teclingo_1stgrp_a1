@@ -13,6 +13,8 @@ model User {
   pronunciationAttempts PronunciationAttempt[]
   userSessions UserSession[]
   userActivities UserActivity[]
+  pushSubscriptions PushSubscription[]
+  notificationPreference NotificationPreference?
   id              String           @id @default(uuid())
   email           String           @unique
   name            String?
@@ -940,4 +942,34 @@ model UserActivity {
 
   @@index([userId, createdAt])
   @@index([eventType, createdAt])
+}
+
+// ===================================================================
+// NOTIFICACIONES PUSH — Suscripciones y preferencias de recordatorio
+// ===================================================================
+model PushSubscription {
+  id         String   @id @default(uuid())
+  userId     String
+  endpoint   String   @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model NotificationPreference {
+  id          String   @id @default(uuid())
+  userId      String   @unique
+  enabled     Boolean  @default(false)
+  daysOfWeek  Int[]    @default([])
+  hour        Int      @default(20)
+  minute      Int      @default(0)
+  timezone    String   @default("America/Mexico_City")
+  lastSentAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
