@@ -1702,6 +1702,158 @@ app.post("/api/english-groups", async (req: Request, res: Response) => {
   }
 });
 
+// ============================================================
+// OPERATIONS CONTROL - Dashboard operativo del Director
+// ============================================================
+
+const DIA_MAP: Record<number, string> = {
+  0: 'DO', 1: 'LU', 2: 'MA', 3: 'MI', 4: 'JU', 5: 'VI', 6: 'SA',
+};
+
+function getLocationFromTurno(turno: string | null | undefined): string {
+  if (!turno) return 'Sin ubicacion';
+  const t = String(turno).toUpperCase();
+  if (t.includes('DISTANCIA') || t.includes('LINEA')) return 'Virtual';
+  if (t.includes('MATUTINO')) return 'Panuco - Matutino';
+  if (t.includes('VESPERTINO')) return 'Panuco - Vespertino';
+  return String(turno);
+}
+
+async function getScheduleForDate(dateStr: string, directorEmail?: string) {
+  const date = new Date(dateStr + 'T12:00:00-06:00');
+  const dayCode = DIA_MAP[date.getDay()] || 'LU';
+
+  const whereGroup: any = { status: 'ACTIVE' };
+  if (directorEmail) whereGroup.directorEmail = String(directorEmail).toLowerCase().trim();
+
+  const schedules = await prisma.englishGroupSchedule.findMany({
+    where: {
+      dias: dayCode,
+      group: whereGroup,
+    },
+    include: {
+      group: {
+        select: {
+          id: true, codeId: true, nombre: true, grupo: true, nivel: true,
+          docenteEmail: true, turno: true, carrera: true, directorEmail: true,
+        },
+      },
+    },
+    orderBy: [{ horaInicio: 'asc' }, { orden: 'asc' }],
+  });
+
+  const teacherMap = new Map<string, Array<{ start: string; end: string }>>();
+  schedules.forEach((s) => {
+    const email = s.group.docenteEmail;
+    if (!email) return;
+    if (!teacherMap.has(email)) teacherMap.set(email, []);
+    teacherMap.get(email)!.push({ start: s.horaInicio, end: s.horaFin });
+  });
+
+  const conflictTeachers = new Set<string>();
+  teacherMap.forEach((blocks, email) => {
+    for (let i = 0; i < blocks.length; i++) {
+      for (let j = i + 1; j < blocks.length; j++) {
+        if (blocks[i].start < blocks[j].end && blocks[i].end > blocks[j].start) {
+          conflictTeachers.add(email);
+        }
+      }
+    }
+  });
+
+  const docenteEmails = Array.from(new Set(schedules.map((s) => s.group.docenteEmail).filter(Boolean) as string[]));
+  const teachers = docenteEmails.length > 0
+    ? await prisma.user.findMany({
+        where: { email: { in: docenteEmails } },
+        select: { email: true, name: true },
+      })
+    : [];
+  const teacherNameByEmail = new Map(teachers.map((t) => [t.email.toLowerCase(), t.name || t.email.split('@')[0]]));
+
+  const items = schedules.map((s) => {
+    const docenteEmail = s.group.docenteEmail || null;
+    const teacherName = docenteEmail ? (teacherNameByEmail.get(docenteEmail.toLowerCase()) || null) : null;
+    let status: 'ok' | 'alert' | 'conflict' = 'ok';
+    let conflictReason: string | null = null;
+    if (!docenteEmail) {
+      status = 'alert';
+      conflictReason = 'Sin docente asignado';
+    } else if (conflictTeachers.has(docenteEmail)) {
+      status = 'conflict';
+      conflictReason = 'Conflicto de horario del docente';
+    }
+    const initials = teacherName
+      ? teacherName.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
+      : '??';
+    return {
+      scheduleId: s.id,
+      groupId: s.group.id,
+      groupCode: s.group.codeId,
+      groupName: s.group.nombre,
+      groupLetter: s.group.grupo,
+      nivel: s.group.nivel,
+      teacherName,
+      teacherInitials: initials,
+      startTime: s.horaInicio,
+      endTime: s.horaFin,
+      location: getLocationFromTurno(s.group.turno),
+      status,
+      conflictReason,
+      dayCode,
+    };
+  });
+
+  return { dayCode, items };
+}
+
+app.get('/api/operations/schedule', async (req: Request, res: Response) => {
+  try {
+    const directorEmail = req.query.directorEmail ? String(req.query.directorEmail) : undefined;
+    const dateParam = req.query.date ? String(req.query.date) : null;
+    const dateStr = dateParam || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Mexico_City' });
+
+    const { dayCode, items } = await getScheduleForDate(dateStr, directorEmail);
+
+    res.json({
+      ok: true,
+      date: dateStr,
+      dayCode,
+      totalActiveClasses: items.length,
+      schedule: items,
+    });
+  } catch (error) {
+    console.error('[operations/schedule]', error);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
+app.get('/api/operations/schedule-week', async (req: Request, res: Response) => {
+  try {
+    const directorEmail = req.query.directorEmail ? String(req.query.directorEmail) : undefined;
+
+    const nowCDMX = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const dayOfWeek = nowCDMX.getDay();
+    const diffToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const monday = new Date(nowCDMX);
+    monday.setDate(nowCDMX.getDate() + diffToMonday);
+
+    const days: Array<{ date: string; dayCode: string; totalClasses: number; schedule: any[] }> = [];
+    for (let i = 0; i < 7; i++) {
+      const dayDate = new Date(monday);
+      dayDate.setDate(monday.getDate() + i);
+      const dateStr = dayDate.toLocaleDateString('en-CA');
+      const { dayCode, items } = await getScheduleForDate(dateStr, directorEmail);
+      days.push({ date: dateStr, dayCode, totalClasses: items.length, schedule: items });
+    }
+
+    const totalWeek = days.reduce((acc, d) => acc + d.totalClasses, 0);
+    res.json({ ok: true, weekStart: days[0]?.date, weekEnd: days[6]?.date, totalActiveClasses: totalWeek, days });
+  } catch (error) {
+    console.error('[operations/schedule-week]', error);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
 // 16. Listar grupos de inglés del usuario (director, docente asignado o miembro activo) con horarios
 app.get("/api/english-groups/:email", async (req: Request, res: Response) => {
   try {
