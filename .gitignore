@@ -52,3 +52,15 @@ seed-*.cjs
 list-*.cjs
 verify-*.cjs
 cloudflared.deb
+
+# Scripts de seed temporales
+check-*.cjs
+diagnose-*.cjs
+redesign-*.cjs
+seed-*.cjs
+fix-*.cjs
+clean-*.cjs
+apply-*.cjs
+list-*.cjs
+verify-*.cjs
+add-*.cjs

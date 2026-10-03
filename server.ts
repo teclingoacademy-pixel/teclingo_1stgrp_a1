@@ -9,6 +9,9 @@ import crypto from "crypto";
 import contentRoutes from "./api/contentRoutes";
 import aiRoutes from "./api/aiRoutes";
 import toolRoutes from "./api/toolRoutes";
+import presentationRoutes from "./api/presentationRoutes";
+import pronunciationRoutes from "./api/pronunciationRoutes";
+import analyticsRoutes from "./api/analyticsRoutes";
 
 const prisma = new PrismaClient();
 const app = express();
@@ -62,6 +65,9 @@ app.use("/api", aiRoutes);
 // Herramientas de IA del alumno (AI Tutor, Grammar Fixer) con Ollama.
 // /api/tts vive mas abajo en este archivo usando edge-tts.
 app.use("/api", toolRoutes);
+app.use("/api", presentationRoutes);
+app.use("/api", pronunciationRoutes);
+app.use("/api", analyticsRoutes);
 
 function hashPassword(password: string): string {
   return crypto.createHash("sha256").update(password).digest("hex");

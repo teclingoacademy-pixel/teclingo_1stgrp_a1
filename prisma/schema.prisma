@@ -9,6 +9,10 @@ datasource db {
 
 model User {
   examResults   ExamResult[]
+  studentPresentation StudentPresentation?
+  pronunciationAttempts PronunciationAttempt[]
+  userSessions UserSession[]
+  userActivities UserActivity[]
   id              String           @id @default(uuid())
   email           String           @unique
   name            String?
@@ -164,7 +168,8 @@ model Exercise {
   acceptedAnswers String[] @default([])
   aiToolTags      String[] @default([])
   voz             String   @default("female")
-  vocabLinks      ExerciseVocabulary[]    perfil       String   @default("")
+  vocabLinks      ExerciseVocabulary[]
+    perfil       String   @default("")
     fase         String   @default("F1")
     parrafos     Int      @default(1)
 
@@ -853,4 +858,86 @@ model LessonQuickVocab {
 
   @@unique([lessonId, order])
   @@index([lessonId])
+}
+// ===================================================================
+// PRESENTACIÓN PERSONAL DEL ALUMNO (Proyecto Final MCER A1)
+// ===================================================================
+model StudentPresentation {
+  id              String   @id @default(uuid())
+  userId          String
+  // Secciones escritas por el alumno en español
+  section1Spanish String?  // Introducción
+  section2Spanish String?  // Ocupación / Vida
+  section3Spanish String?  // Rutina diaria
+  section4Spanish String?  // Pasado reciente
+  section5Spanish String?  // Planes futuros
+  // Traducciones al inglés
+  section1English String?
+  section2English String?
+  section3English String?
+  section4English String?
+  section5English String?
+  // Presentación final generada
+  fullPresentation String?
+  // Estado
+  status          String   @default("draft") // draft | generated | practiced
+  // Métricas
+  timesPracticed  Int      @default(0)
+  lastPracticedAt DateTime?
+  // Metadata
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([userId])
+}
+
+// ===================================================================
+// PRONUNCIATION ATTEMPTS — Historial de intentos de pronunciación
+// ===================================================================
+model PronunciationAttempt {
+  id           String   @id @default(uuid())
+  userId       String
+  source       String
+  sectionKey   String?
+  targetPhrase String
+  transcript   String
+  score        Int
+  missedWords  String[] @default([])
+  createdAt    DateTime @default(now())
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([source])
+  @@index([userId, source])
+}
+
+// ===================================================================
+// ANALYTICS — Sesiones y actividad del alumno
+// ===================================================================
+model UserSession {
+  id          String    @id @default(uuid())
+  userId      String
+  startedAt   DateTime  @default(now())
+  endedAt     DateTime?
+  durationSec Int       @default(0)
+  device      String?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, startedAt])
+  @@index([startedAt])
+}
+
+model UserActivity {
+  id        String   @id @default(uuid())
+  userId    String
+  sessionId String?
+  eventType String   // "page_view" | "tool_open"
+  eventData Json?
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([eventType, createdAt])
 }

@@ -316,3 +316,45 @@ Protección:
 
 **Última actualización:** 2026-10-01
 **Mantenido por:** Equipo Teclingo
+
+---
+
+## 🎯 REGLAS ADICIONALES (Agregadas 2026-10-02)
+
+### Regla 6: Personajes explícitos
+NUNCA uses "her/his/su" sin contexto en nivel A1.
+Siempre menciona el nombre del personaje: "la madre de Alex", "el carro de Luis".
+El audio TTS también debe mencionar el nombre.
+
+### Regla 7: Preguntas bilingües en A1
+La pregunta debe estar en español con el inglés al lado.
+El alumno A1 no debe adivinar qué se pregunta.
+Formato: "Pregunta en español\n(English question?)"
+
+### Regla 8: TTS lee la frase completa
+Si el questionText tiene ________ (underline), el TTS lee la frase completa con la respuesta.
+El alumno debe escuchar la respuesta mientras intenta adivinarla.
+
+### Regla 9: 4 opciones siempre
+4 opciones excepto WRITING/SPEAKING.
+Con 2 o 3 opciones, el alumno acierta por probabilidad.
+
+### Regla 10: Traducción en SPEAKING y WRITING
+La frase en inglés debe tener su traducción al español en translationSentence.
+El alumno debe saber qué está diciendo.
+
+### Regla 11: Opciones bilingües
+Las opciones en GRAMMAR/LISTENING/READING deben ser bilingües.
+Formato: "Español (English)"
+
+### Regla 12: NUNCA borrar ejercicios (protección de datos)
+Los scripts de rediseño deben usar upsert (update si existe, create si no).
+NUNCA usar deleteMany + create. Los ejercicios pueden tener Submissions vinculados que rompen el DELETE.
+
+### Regla 13: Scripts en ~/teclingo/ (no /tmp/)
+Los scripts de seed SIEMPRE van en ~/teclingo/, NO en /tmp/.
+Así Node encuentra @prisma/client correctamente.
+
+### Regla 14: optionsJson: [] obligatorio
+Los ejercicios abiertos (WRITING/SPEAKING) deben incluir optionsJson: [].
+Prisma rechaza el create sin ese campo.
