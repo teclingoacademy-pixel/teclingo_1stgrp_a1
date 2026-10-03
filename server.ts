@@ -1999,6 +1999,42 @@ app.get('/api/student/next-class', async (req: Request, res: Response) => {
   }
 });
 
+
+// ============================================================
+// OLLAMA PROXY - Para Venus AI Tutor (y otras apps externas)
+// ============================================================
+// Reenvía peticiones a Ollama local (localhost:11434).
+// Uso desde Venus: OLLAMA_BASE_URL=https://api.teclingoingles.com/ollama
+app.all('/ollama/*', async (req: Request, res: Response) => {
+  try {
+    // Extraer el path después de /ollama
+    const subPath = req.originalUrl.replace(/^\/ollama/, '');
+    const targetUrl = `http://localhost:11434${subPath}`;
+
+    const fetchOpts: RequestInit = {
+      method: req.method,
+      headers: { 'Content-Type': 'application/json' },
+    };
+    if (req.method !== 'GET' && req.method !== 'HEAD') {
+      fetchOpts.body = JSON.stringify(req.body);
+    }
+
+    const resp = await fetch(targetUrl, fetchOpts);
+    const contentType = resp.headers.get('content-type') || '';
+
+    if (contentType.includes('application/json')) {
+      const data = await resp.json();
+      res.status(resp.status).json(data);
+    } else {
+      const text = await resp.text();
+      res.status(resp.status).send(text);
+    }
+  } catch (error) {
+    console.error('[ollama-proxy]', error);
+    res.status(502).json({ error: 'Ollama no disponible' });
+  }
+});
+
 // 16. Listar grupos de inglés del usuario (director, docente asignado o miembro activo) con horarios
 app.get("/api/english-groups/:email", async (req: Request, res: Response) => {
   try {
