@@ -397,7 +397,7 @@ export function ListeningLab({ onClose }: { onClose: () => void }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="fixed inset-0 z-[120] bg-[#061a1a] flex flex-col overflow-y-auto"
+      className="fixed inset-0 z-[120] bg-[#061a1a] overflow-y-auto overscroll-contain"
     >
       {/* Header */}
       <header className="p-6 md:p-8 border-b border-white/5 bg-white/[0.02] flex flex-col md:flex-row items-center justify-between gap-6">
@@ -469,7 +469,7 @@ export function ListeningLab({ onClose }: { onClose: () => void }) {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8 p-6 md:p-12">
+      <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-2 gap-8 p-6 md:p-12">
          
          {/* Player Panel */}
          <div className="space-y-8">
@@ -570,7 +570,7 @@ export function ListeningLab({ onClose }: { onClose: () => void }) {
 
          {/* Dictation Panel */}
          <div className="space-y-8">
-            <div className="h-full neo-glass rounded-[3rem] p-8 md:p-12 border-white/5 flex flex-col space-y-8">
+            <div className="neo-glass rounded-[3rem] p-8 md:p-12 border-white/5 flex flex-col space-y-8 min-h-0">
                <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                      <Type size={18} className="text-orange-400" />
@@ -587,7 +587,7 @@ export function ListeningLab({ onClose }: { onClose: () => void }) {
                   )}
                </div>
 
-               <div className="flex-1 flex flex-col space-y-6">
+               <div className="flex flex-col space-y-6 min-h-0">
                   {score !== null ? (
                     <div className="flex-1 w-full bg-white/[0.03] border border-white/10 rounded-[2rem] p-8 overflow-y-auto">
                        <p className="text-white/20 text-[10px] font-black uppercase tracking-widest mb-4">Análisis de Errores Fonéticos</p>
