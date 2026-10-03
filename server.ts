@@ -2212,7 +2212,14 @@ app.get('/api/messaging/conversations', async (req: Request, res: Response) => {
 
     const chats = await Promise.all(convs.map(async (conv) => {
       const messages = await prisma.message.findMany({
-        where: { conversationId: conv.id, deletedAt: null },
+        where: {
+          conversationId: conv.id,
+          deletedAt: null,
+          OR: [
+            { visibleTo: { isEmpty: true } },
+            { visibleTo: { has: user.id } },
+          ],
+        },
         orderBy: { createdAt: 'asc' },
         take: 100,
       });
@@ -2337,7 +2344,14 @@ app.get('/api/messaging/conversations/:id/messages', async (req: Request, res: R
     if (!user) return res.status(404).json({ ok: false, error: 'usuario_no_encontrado' });
 
     const messages = await prisma.message.findMany({
-      where: { conversationId: req.params.id, deletedAt: null },
+      where: {
+        conversationId: req.params.id,
+        deletedAt: null,
+        OR: [
+          { visibleTo: { isEmpty: true } },
+          { visibleTo: { has: user.id } },
+        ],
+      },
       orderBy: { createdAt: 'asc' },
       take: limit,
     });

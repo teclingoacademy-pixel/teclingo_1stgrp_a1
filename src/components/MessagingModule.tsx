@@ -34,6 +34,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext, ChatThread, Message as AppMessage } from '../context/AppContext';
 import { UserHierarchyModal, User } from './UsersMaster';
 import { listarUsuarios, UsuarioComunidad } from '../services/identityService';
+import { broadcastMessage } from '../services/messagingService';
 
 // Helper to convert Chat to User for the modal
 export const chatToUser = (chat: ChatThread): User => ({
@@ -61,6 +62,12 @@ export function MessagingModule({ initialChatId, initialPrefilledText }: { initi
   const [showDossier, setShowDossier] = useState(false);
   const [showBroadcastModal, setShowBroadcastModal] = useState(false);
   const [broadcastText, setBroadcastText] = useState('');
+  const [usuariosBroadcast, setUsuariosBroadcast] = useState<UsuarioComunidad[]>([]);
+  const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
+  const [searchUserBroadcast, setSearchUserBroadcast] = useState('');
+  const [sendingBroadcast, setSendingBroadcast] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<{ recipients: number; pushSent: number; pushFailed: number } | null>(null);
+  const [broadcastError, setBroadcastError] = useState<string | null>(null);
   const [mobileView, setMobileView] = useState<'list' | 'chat'>('list');
   const [activeTab, setActiveTab] = useState<'contactos' | 'mensajes'>('mensajes');
   const [contactos, setContactos] = useState<UsuarioComunidad[]>([]);
@@ -199,23 +206,65 @@ export function MessagingModule({ initialChatId, initialPrefilledText }: { initi
     markChatAsRead(selectedChat.id);
   };
 
-  const handleBroadcast = () => {
-    if (!broadcastText) return;
-    
-    // Broadcast to GLOBAL chat
-    const broadcastMsg: AppMessage = {
-      id: Date.now().toString(),
-      senderId: 'DIR-001',
-      senderName: 'Dirección General',
-      senderRole: 'DIRECTOR',
-      content: broadcastText,
-      timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      isDirector: true
-    };
+  // Cargar usuarios y preseleccionar TODOS al abrir el modal
+  useEffect(() => {
+    if (!showBroadcastModal) return;
+    setBroadcastResult(null);
+    setBroadcastError(null);
+    listarUsuarios('TODOS', '').then((users) => {
+      // Excluir al propio director de la lista
+      const filtered = users.filter((u) => u.email.toLowerCase() !== (userEmail || '').toLowerCase());
+      setUsuariosBroadcast(filtered);
+      setSelectedUserIds(filtered.map((u) => u.id));
+    }).catch((err) => {
+      console.error('[broadcast] Error cargando usuarios:', err);
+      setBroadcastError('No se pudieron cargar los usuarios');
+    });
+  }, [showBroadcastModal, userEmail]);
 
-    addMessage('CHAT-GLOBAL', broadcastMsg);
-    setBroadcastText('');
-    setShowBroadcastModal(false);
+  const handleBroadcast = async () => {
+    if (!broadcastText.trim()) {
+      setBroadcastError('Escribe un mensaje antes de enviar');
+      return;
+    }
+    if (selectedUserIds.length === 0) {
+      setBroadcastError('Selecciona al menos un usuario');
+      return;
+    }
+
+    setSendingBroadcast(true);
+    setBroadcastError(null);
+    setBroadcastResult(null);
+
+    try {
+      // Mapear IDs seleccionados a emails (el backend los resuelve a userIds)
+      const recipientEmails = usuariosBroadcast
+        .filter((u) => selectedUserIds.includes(u.id))
+        .map((u) => u.email);
+
+      if (recipientEmails.length === 0) {
+        throw new Error('No se pudieron mapear los usuarios seleccionados');
+      }
+
+      const result = await broadcastMessage(userEmail || '', recipientEmails, broadcastText);
+
+      setBroadcastResult(result);
+      setBroadcastText('');
+
+      // Refrescar el chat GLOBAL para que aparezca el mensaje
+      await cargarMensajesChat('CHAT-GLOBAL');
+
+      // Cerrar despues de 2s (exito)
+      setTimeout(() => {
+        setShowBroadcastModal(false);
+        setBroadcastResult(null);
+      }, 2000);
+    } catch (err: any) {
+      console.error('[broadcast] Error:', err);
+      setBroadcastError(err?.message || 'Error al enviar el broadcast');
+    } finally {
+      setSendingBroadcast(false);
+    }
   };
 
   const handleAISuggest = () => {
@@ -727,45 +776,147 @@ export function MessagingModule({ initialChatId, initialPrefilledText }: { initi
               className="max-w-xl w-full neo-glass border-white/20 rounded-[3rem] p-10 overflow-hidden relative shadow-[0_0_100px_rgba(222,255,154,0.1)]"
               onClick={e => e.stopPropagation()}
             >
-               <div className="flex items-center gap-4 mb-8">
+               {/* Header */}
+               <div className="flex items-center gap-4 mb-6 shrink-0">
                   <div className="w-14 h-14 rounded-2xl bg-orange-500/20 flex items-center justify-center text-orange-500 shadow-[0_0_20px_rgba(249,115,22,0.2)]">
                      <Volume2 size={32} />
                   </div>
-                  <div>
+                  <div className="flex-1">
                     <h3 className="text-2xl font-black text-white uppercase tracking-tighter italic">Broadcast Global</h3>
-                    <p className="text-orange-500 text-[10px] font-black uppercase tracking-widest">Mensaje de Máxima Difusión Institucional</p>
+                    <p className="text-orange-500 text-[10px] font-black uppercase tracking-widest">
+                      {selectedUserIds.length} de {usuariosBroadcast.length} destinatarios seleccionados
+                    </p>
                   </div>
+                  <button
+                    onClick={() => setShowBroadcastModal(false)}
+                    className="p-2 rounded-xl bg-white/5 hover:bg-white/10 text-white/40 hover:text-white transition-all"
+                  >
+                    <X size={20} />
+                  </button>
                </div>
 
-               <div className="space-y-6">
-                  <div className="p-6 rounded-[2rem] bg-orange-500/5 border border-orange-500/20">
-                     <textarea 
-                        value={broadcastText}
-                        onChange={(e) => setBroadcastText(e.target.value)}
-                        placeholder="Redacta el anuncio para toda la comunidad..."
-                        className="w-full bg-transparent text-white text-sm font-bold h-40 outline-none resize-none placeholder:text-white/10"
-                     />
+               <div className="space-y-4 overflow-y-auto flex-1 pr-1">
+                  {/* Selector de usuarios */}
+                  <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/10 space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Search size={14} className="text-white/40" />
+                      <input
+                        type="text"
+                        value={searchUserBroadcast}
+                        onChange={(e) => setSearchUserBroadcast(e.target.value)}
+                        placeholder="Buscar usuario..."
+                        className="flex-1 bg-transparent text-white text-xs outline-none placeholder:text-white/20"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <button
+                        onClick={() => {
+                          const visible = usuariosBroadcast.filter((u) =>
+                            !searchUserBroadcast ||
+                            u.nombre.toLowerCase().includes(searchUserBroadcast.toLowerCase()) ||
+                            u.email.toLowerCase().includes(searchUserBroadcast.toLowerCase())
+                          );
+                          const allSelected = visible.every((u) => selectedUserIds.includes(u.id));
+                          if (allSelected) {
+                            setSelectedUserIds(selectedUserIds.filter((id) => !visible.some((u) => u.id === id)));
+                          } else {
+                            const newIds = new Set([...selectedUserIds, ...visible.map((u) => u.id)]);
+                            setSelectedUserIds(Array.from(newIds));
+                          }
+                        }}
+                        className="text-[10px] font-black uppercase tracking-widest text-[#DEFF9A] hover:text-[#DEFF9A]/70 transition-all"
+                      >
+                        {usuariosBroadcast.length > 0 && usuariosBroadcast.every((u) => selectedUserIds.includes(u.id)) ? 'Deseleccionar todos' : 'Seleccionar todos'}
+                      </button>
+                    </div>
+
+                    <div className="max-h-48 overflow-y-auto space-y-1 pr-1">
+                      {usuariosBroadcast
+                        .filter((u) =>
+                          !searchUserBroadcast ||
+                          u.nombre.toLowerCase().includes(searchUserBroadcast.toLowerCase()) ||
+                          u.email.toLowerCase().includes(searchUserBroadcast.toLowerCase())
+                        )
+                        .map((u) => {
+                          const checked = selectedUserIds.includes(u.id);
+                          return (
+                            <label
+                              key={u.id}
+                              className={`flex items-center gap-3 p-2 rounded-xl cursor-pointer transition-all ${checked ? 'bg-[#DEFF9A]/10 border border-[#DEFF9A]/30' : 'bg-white/[0.02] border border-white/5 hover:bg-white/[0.05]'}`}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => {
+                                  if (checked) {
+                                    setSelectedUserIds(selectedUserIds.filter((id) => id !== u.id));
+                                  } else {
+                                    setSelectedUserIds([...selectedUserIds, u.id]);
+                                  }
+                                }}
+                                className="w-4 h-4 accent-[#DEFF9A] cursor-pointer"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-white text-xs font-bold truncate">{u.nombre || u.email}</p>
+                                <p className="text-white/40 text-[9px] truncate">{u.email}</p>
+                              </div>
+                              <span className={`text-[8px] font-black uppercase px-2 py-0.5 rounded ${u.rol === 'DIRECTOR' ? 'bg-orange-500/20 text-orange-400' : u.rol === 'DOCENTE' ? 'bg-blue-500/20 text-blue-400' : 'bg-white/10 text-white/50'}`}>
+                                {u.rol}
+                              </span>
+                            </label>
+                          );
+                        })}
+                      {usuariosBroadcast.length === 0 && (
+                        <p className="text-white/40 text-xs text-center py-4">Cargando usuarios...</p>
+                      )}
+                    </div>
                   </div>
 
-                  <div className="flex items-center gap-2 p-4 rounded-xl bg-orange-500/10 border border-orange-500/20 text-orange-400">
-                     <Info size={16} />
-                     <p className="text-[9px] font-black uppercase tracking-widest">Este mensaje será anclado en todos los dispositivos de la comunidad.</p>
+                  {/* Textarea del mensaje */}
+                  <div className="p-4 rounded-2xl bg-orange-500/5 border border-orange-500/20">
+                    <textarea
+                      value={broadcastText}
+                      onChange={(e) => setBroadcastText(e.target.value)}
+                      placeholder="Redacta el anuncio..."
+                      className="w-full bg-transparent text-white text-sm font-bold h-24 outline-none resize-none placeholder:text-white/10"
+                    />
                   </div>
 
-                  <div className="flex gap-4">
-                     <button 
-                      onClick={() => setShowBroadcastModal(false)}
-                      className="flex-1 py-4 rounded-2xl border border-white/10 text-white/40 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all"
-                     >
-                        Cancelar
-                     </button>
-                     <button 
-                      onClick={handleBroadcast}
-                      className="flex-[2] py-4 rounded-2xl bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:scale-[1.02] transition-all"
-                     >
-                        Lanzar Difusión Global
-                     </button>
-                  </div>
+                  {/* Mensajes de estado */}
+                  {broadcastError && (
+                    <div className="flex items-center gap-2 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-red-400">
+                      <Info size={14} />
+                      <p className="text-[10px] font-black uppercase tracking-widest">{broadcastError}</p>
+                    </div>
+                  )}
+
+                  {broadcastResult && (
+                    <div className="flex items-center gap-2 p-3 rounded-xl bg-green-500/10 border border-green-500/20 text-green-400">
+                      <Check size={14} />
+                      <p className="text-[10px] font-black uppercase tracking-widest">
+                        Enviado a {broadcastResult.recipients} usuarios • Push: {broadcastResult.pushSent} ok, {broadcastResult.pushFailed} fail
+                      </p>
+                    </div>
+                  )}
+               </div>
+
+               {/* Footer con botones */}
+               <div className="flex gap-4 mt-6 shrink-0">
+                  <button
+                    onClick={() => setShowBroadcastModal(false)}
+                    disabled={sendingBroadcast}
+                    className="flex-1 py-4 rounded-2xl border border-white/10 text-white/40 text-[10px] font-black uppercase tracking-widest hover:text-white transition-all disabled:opacity-40"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleBroadcast}
+                    disabled={sendingBroadcast || selectedUserIds.length === 0 || !broadcastText.trim()}
+                    className="flex-[2] py-4 rounded-2xl bg-orange-500 text-white text-[10px] font-black uppercase tracking-widest shadow-[0_0_30px_rgba(249,115,22,0.3)] hover:scale-[1.02] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {sendingBroadcast ? 'Enviando...' : `Enviar a ${selectedUserIds.length} usuario${selectedUserIds.length !== 1 ? 's' : ''}`}
+                  </button>
                </div>
             </motion.div>
           </motion.div>

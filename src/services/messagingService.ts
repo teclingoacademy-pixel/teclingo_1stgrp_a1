@@ -89,6 +89,19 @@ export async function marcarLeido(email: string, chatId: string): Promise<void> 
   await jpost(`/api/messaging/conversations/${encodeURIComponent(chatId)}/read`, { email });
 }
 
+export async function broadcastMessage(
+  senderEmail: string,
+  recipientEmails: string[],
+  content: string
+): Promise<{ recipients: number; pushSent: number; pushFailed: number }> {
+  const data = await jpost<{ success: boolean; data: any; error?: string }>(
+    '/api/messaging/broadcast',
+    { senderEmail, recipientEmails, content }
+  );
+  if (!data.success) throw new Error(data.error || 'Error en broadcast');
+  return data.data;
+}
+
 export default {
   listarChats,
   crearChat,

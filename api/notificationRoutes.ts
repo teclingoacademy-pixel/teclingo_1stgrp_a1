@@ -153,4 +153,115 @@ router.post('/notifications/test', async (req: Request, res: Response) => {
   }
 });
 
+
+// POST /api/messaging/broadcast
+// Envia un mensaje a la conversacion GLOBAL con visibleTo = recipientEmails.
+// Ademas envia push notification a cada destinatario suscrito.
+router.post('/messaging/broadcast', async (req: Request, res: Response) => {
+  try {
+    const { senderEmail, recipientEmails, content } = req.body || {};
+
+    if (!senderEmail || !content || !Array.isArray(recipientEmails)) {
+      return res.status(400).json({ success: false, error: 'senderEmail, content y recipientEmails[] requeridos' });
+    }
+    if (recipientEmails.length === 0) {
+      return res.status(400).json({ success: false, error: 'recipientEmails no puede estar vacio' });
+    }
+
+    const sender = await prisma.user.findUnique({ where: { email: String(senderEmail).toLowerCase().trim() } });
+    if (!sender) return res.status(404).json({ success: false, error: 'Remitente no encontrado' });
+    if (sender.role !== 'ADMIN' && sender.role !== 'TEACHER') {
+      return res.status(403).json({ success: false, error: 'Solo ADMIN o TEACHER pueden enviar broadcast' });
+    }
+
+    // Buscar la conversacion GLOBAL
+    let conv = await prisma.conversation.findFirst({ where: { type: 'GLOBAL' } });
+    if (!conv) {
+      conv = await prisma.conversation.create({
+        data: {
+          id: 'CHAT-GLOBAL',
+          type: 'GLOBAL',
+          name: 'Anuncios Globales',
+          createdById: sender.id,
+          createdByEmail: sender.email,
+        },
+      });
+    }
+
+    // Buscar los userIds de los destinatarios (por email)
+    const normalizedEmails = Array.from(new Set(recipientEmails.map((e: string) => String(e).toLowerCase().trim())));
+    const recipients = await prisma.user.findMany({
+      where: { email: { in: normalizedEmails } },
+      select: { id: true, email: true, name: true },
+    });
+
+    if (recipients.length === 0) {
+      return res.status(404).json({ success: false, error: 'Ningun destinatario valido encontrado' });
+    }
+
+    const recipientIds = recipients.map((r) => r.id);
+
+    // Crear el mensaje con visibleTo = recipientIds
+    const msg = await prisma.message.create({
+      data: {
+        conversationId: conv.id,
+        senderId: sender.id,
+        senderEmail: sender.email,
+        senderName: sender.name || sender.email.split('@')[0],
+        senderRole: sender.role,
+        content: String(content).trim(),
+        isDirector: sender.role === 'ADMIN',
+        visibleTo: recipientIds,
+      },
+    });
+
+    await prisma.conversation.update({
+      where: { id: conv.id },
+      data: {
+        lastMessage: String(content).substring(0, 100),
+        lastMessageAt: msg.createdAt,
+      },
+    });
+
+    // Enviar push a cada destinatario que tenga suscripcion activa
+    const subs = await prisma.pushSubscription.findMany({ where: { userId: { in: recipientIds } } });
+    const payload = JSON.stringify({
+      title: 'TECLINGO — Anuncio',
+      body: String(content).substring(0, 120),
+      icon: '/icon-192.png',
+      url: '/',
+    });
+
+    let pushSent = 0;
+    let pushFailed = 0;
+    for (const s of subs) {
+      try {
+        await webpush.sendNotification(
+          { endpoint: s.endpoint, keys: { p256dh: s.p256dh, auth: s.auth } },
+          payload
+        );
+        pushSent++;
+      } catch (err) {
+        console.warn('[messaging/broadcast] Push fallo:', s.id, err);
+        pushFailed++;
+      }
+    }
+
+    console.log(`[messaging/broadcast] De ${sender.email} a ${recipients.length} usuarios. Push: ${pushSent} ok, ${pushFailed} fail`);
+
+    res.json({
+      success: true,
+      data: {
+        messageId: msg.id,
+        recipients: recipients.length,
+        pushSent,
+        pushFailed,
+      },
+    });
+  } catch (error) {
+    console.error('[messaging/broadcast] Error:', error);
+    res.status(500).json({ success: false, error: error instanceof Error ? error.message : 'Error interno' });
+  }
+});
+
 export default router;
