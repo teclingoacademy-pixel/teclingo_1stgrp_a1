@@ -1854,6 +1854,151 @@ app.get('/api/operations/schedule-week', async (req: Request, res: Response) => 
   }
 });
 
+// ============================================================
+// STUDENT DASHBOARD — Próxima clase del alumno
+// ============================================================
+
+app.get('/api/student/next-class', async (req: Request, res: Response) => {
+  try {
+    const studentEmail = String(req.query.studentEmail || '').toLowerCase().trim();
+    if (!studentEmail) return res.status(400).json({ ok: false, error: 'studentEmail requerido' });
+
+    const student = await prisma.user.findUnique({ where: { email: studentEmail } });
+    if (!student) return res.status(404).json({ ok: false, error: 'Alumno no encontrado' });
+
+    // Buscar los grupos activos del alumno
+    const memberships = await prisma.groupMember.findMany({
+      where: { userId: student.id, activo: true },
+      include: {
+        group: {
+          select: {
+            id: true, codeId: true, nombre: true, grupo: true, nivel: true,
+            docenteEmail: true, turno: true, status: true,
+          },
+        },
+      },
+    });
+
+    const activeGroups = memberships.filter((m) => m.group && m.group.status === 'ACTIVE').map((m) => m.group);
+    if (activeGroups.length === 0) {
+      return res.json({ ok: true, hasGroup: false, hasSchedule: false, nextClass: null });
+    }
+
+    const groupIds = activeGroups.map((g) => g.id);
+    const schedules = await prisma.englishGroupSchedule.findMany({
+      where: { groupId: { in: groupIds } },
+      orderBy: [{ horaInicio: 'asc' }, { orden: 'asc' }],
+    });
+
+    if (schedules.length === 0) {
+      return res.json({ ok: true, hasGroup: true, hasSchedule: false, nextClass: null });
+    }
+
+    // Calcular el próximo schedule
+    const DIA_MAP: Record<number, string> = {
+      0: 'DO', 1: 'LU', 2: 'MA', 3: 'MI', 4: 'JU', 5: 'VI', 6: 'SA',
+    };
+
+    const nowCDMX = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Mexico_City' }));
+    const nowHHMM = nowCDMX.getHours() * 60 + nowCDMX.getMinutes();
+
+    // Buscar el próximo: iterar sobre los días 0 a 14 (hoy y siguientes 2 semanas)
+    let best: { dateISO: string; dayCode: string; schedule: any; group: any } | null = null;
+    let bestMinutes = Infinity;
+
+    for (let offset = 0; offset < 14; offset++) {
+      const day = new Date(nowCDMX);
+      day.setDate(nowCDMX.getDate() + offset);
+      const dayCode = DIA_MAP[day.getDay()];
+
+      const daySchedules = schedules.filter((s) => s.dias === dayCode);
+      for (const s of daySchedules) {
+        const [h, m] = s.horaInicio.split(':').map((x) => parseInt(x, 10));
+        const startMinutes = h * 60 + m;
+
+        // Si es hoy, tiene que ser en el futuro
+        if (offset === 0 && startMinutes <= nowHHMM) continue;
+
+        const totalMinutes = offset * 24 * 60 + startMinutes - nowHHMM;
+        if (totalMinutes < bestMinutes) {
+          bestMinutes = totalMinutes;
+          const group = activeGroups.find((g) => g.id === s.groupId);
+          const dateISO = day.toLocaleDateString('en-CA');
+          best = { dateISO, dayCode, schedule: s, group };
+        }
+      }
+    }
+
+    if (!best || !best.group) {
+      return res.json({ ok: true, hasGroup: true, hasSchedule: true, nextClass: null });
+    }
+
+    // Formatear hora
+    const [h, m] = best.schedule.horaInicio.split(':').map((x) => parseInt(x, 10));
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    const h12 = h % 12 === 0 ? 12 : h % 12;
+    const hhmm12 = `${String(h12).padStart(2, '0')}:${String(m).padStart(2, '0')} ${ampm}`;
+
+    // Label relativo
+    let relativeLabel = '';
+    if (bestMinutes < 24 * 60 && best.dateISO === nowCDMX.toLocaleDateString('en-CA')) {
+      relativeLabel = 'Hoy';
+    } else if (bestMinutes < 48 * 60) {
+      const tomorrow = new Date(nowCDMX);
+      tomorrow.setDate(nowCDMX.getDate() + 1);
+      if (best.dateISO === tomorrow.toLocaleDateString('en-CA')) relativeLabel = 'Mañana';
+      else relativeLabel = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'][new Date(best.dateISO + 'T12:00:00').getDay()];
+    } else {
+      const d = new Date(best.dateISO + 'T12:00:00');
+      relativeLabel = d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short' }).replace('.', '');
+    }
+
+    // Docente
+    let teacherName: string | null = null;
+    let teacherInitials = '??';
+    if (best.group.docenteEmail) {
+      const t = await prisma.user.findUnique({ where: { email: best.group.docenteEmail } });
+      if (t && t.name) {
+        teacherName = t.name;
+        teacherInitials = t.name.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase();
+      }
+    }
+
+    // Ubicación
+    const turno = String(best.group.turno || '').toUpperCase();
+    let location = 'Sin ubicación';
+    if (turno.includes('DISTANCIA') || turno.includes('LINEA')) location = 'Virtual';
+    else if (turno.includes('MATUTINO')) location = 'Pánuco · Matutino';
+    else if (turno.includes('VESPERTINO')) location = 'Pánuco · Vespertino';
+
+    res.json({
+      ok: true,
+      hasGroup: true,
+      hasSchedule: true,
+      nextClass: {
+        scheduleId: best.schedule.id,
+        groupId: best.group.id,
+        groupCode: best.group.codeId,
+        groupName: best.group.nombre,
+        nivel: best.group.nivel,
+        teacherName,
+        teacherInitials,
+        startTime: best.schedule.horaInicio,
+        endTime: best.schedule.horaFin,
+        time12h: hhmm12,
+        dayCode: best.dayCode,
+        dateISO: best.dateISO,
+        relativeLabel,
+        location,
+        minutesUntil: bestMinutes,
+      },
+    });
+  } catch (error) {
+    console.error('[student/next-class]', error);
+    res.status(500).json({ ok: false, error: 'Error interno' });
+  }
+});
+
 // 16. Listar grupos de inglés del usuario (director, docente asignado o miembro activo) con horarios
 app.get("/api/english-groups/:email", async (req: Request, res: Response) => {
   try {
