@@ -15,6 +15,8 @@ interface Props {
   initialPrefs: NotificationPrefs;
   onSave: (prefs: NotificationPrefs) => Promise<boolean>;
   onSendTest: () => Promise<boolean>;
+  isSubscribed?: boolean;
+  onUnsubscribe?: () => Promise<boolean>;
 }
 
 const DAYS = [
@@ -30,13 +32,14 @@ const DAYS = [
 const HOURS = Array.from({ length: 24 }, (_, i) => i);
 const MINUTES = [0, 15, 30, 45];
 
-export function NotificationSettingsModal({ isOpen, onClose, initialPrefs, onSave, onSendTest }: Props) {
+export function NotificationSettingsModal({ isOpen, onClose, initialPrefs, onSave, onSendTest, isSubscribed = false, onUnsubscribe }: Props) {
   const [days, setDays] = useState<number[]>(initialPrefs.daysOfWeek);
   const [hour, setHour] = useState<number>(initialPrefs.hour);
   const [minute, setMinute] = useState<number>(initialPrefs.minute);
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [message, setMessage] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
+  const [unsubscribing, setUnsubscribing] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
@@ -73,6 +76,20 @@ export function NotificationSettingsModal({ isOpen, onClose, initialPrefs, onSav
     const ok = await onSendTest();
     setTesting(false);
     setMessage({ type: ok ? 'ok' : 'error', text: ok ? 'Notificacion enviada!' : 'No se pudo enviar (revisa permisos)' });
+  };
+
+  const handleUnsubscribe = async () => {
+    if (!onUnsubscribe) return;
+    setUnsubscribing(true);
+    setMessage(null);
+    const ok = await onUnsubscribe();
+    setUnsubscribing(false);
+    if (ok) {
+      setMessage({ type: 'ok', text: 'Notificaciones desactivadas' });
+      setTimeout(() => onClose(), 1200);
+    } else {
+      setMessage({ type: 'error', text: 'Error al desactivar' });
+    }
   };
 
   if (!isOpen) return null;
@@ -152,17 +169,38 @@ export function NotificationSettingsModal({ isOpen, onClose, initialPrefs, onSav
           </div>
         </div>
 
-        {/* Preview */}
+        {/* Preview — Simulacion de notificacion push */}
         <div className="p-4 rounded-xl bg-white/[0.02] border border-white/10">
-          <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-1">
-            Recibiras recordatorios
+          <p className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-3">
+            Asi se vera tu recordatorio
           </p>
-          <p className="text-white text-sm">
-            {days.length === 0
-              ? 'Ningun dia seleccionado'
-              : days.map((d) => DAYS.find((x) => x.value === d)?.label).join(' ')}
-            {days.length > 0 && <> a las <strong className="text-[#DEFF9A]">{hourStr}:{minStr}</strong></>}
-          </p>
+
+          {days.length === 0 ? (
+            <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-center">
+              <p className="text-white/40 text-xs">Selecciona al menos un dia</p>
+            </div>
+          ) : (
+            <div className="flex items-start gap-3 p-3 rounded-2xl bg-white/[0.06] border border-white/10 shadow-lg">
+              <div className="w-10 h-10 rounded-xl bg-[#DEFF9A] flex items-center justify-center shrink-0">
+                <Bell size={20} className="text-[#061a1a]" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-white text-xs font-black uppercase tracking-wider">TECLINGO</p>
+                  <p className="text-white/40 text-[10px]">{hourStr}:{minStr}</p>
+                </div>
+                <p className="text-white/80 text-xs leading-relaxed">
+                  Es hora de tu practica diaria. Manten tu racha activa.
+                </p>
+              </div>
+            </div>
+          )}
+
+          {days.length > 0 && (
+            <p className="text-white/40 text-[10px] mt-3 text-center">
+              {days.map((d) => DAYS.find((x) => x.value === d)?.label).join(' · ')} a las {hourStr}:{minStr}
+            </p>
+          )}
         </div>
 
         {/* Mensaje */}
@@ -171,6 +209,17 @@ export function NotificationSettingsModal({ isOpen, onClose, initialPrefs, onSav
             {message.type === 'ok' ? <CheckCircle2 size={14} /> : <AlertCircle size={14} />}
             {message.text}
           </div>
+        )}
+
+        {/* Desactivar (solo si esta suscrito) */}
+        {isSubscribed && onUnsubscribe && (
+          <button
+            onClick={handleUnsubscribe}
+            disabled={unsubscribing}
+            className="w-full px-4 py-3 rounded-xl bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 text-xs font-black uppercase tracking-widest transition-all cursor-pointer disabled:opacity-40"
+          >
+            {unsubscribing ? 'Desactivando...' : 'Desactivar notificaciones'}
+          </button>
         )}
 
         {/* Botones */}

@@ -32,7 +32,8 @@ import {
   BookOpen,
   Shield,
   Camera,
-  Upload
+  Upload,
+  BellRing
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sidebar, SidebarItem } from './Sidebar';
@@ -399,7 +400,22 @@ interface AlumnoMainboardProps {
                              </div>
                           </div>
                         )}
-                        <button 
+                        <button
+                          onClick={() => {
+                            if (!device.supportsPWA) {
+                              setShowInstallModal(true);
+                            } else if (!push.isSubscribed) {
+                              handleActivateNotifications();
+                            } else {
+                              setShowNotifSettings(true);
+                            }
+                          }}
+                          className={'p-3.5 rounded-2xl border transition-all cursor-pointer shrink-0 ' + (push.isSubscribed ? 'bg-[#DEFF9A]/10 border-[#DEFF9A]/30 text-[#DEFF9A] shadow-[0_0_15px_rgba(222,255,154,0.15)]' : 'bg-white/5 border-white/10 text-white/40 hover:text-white hover:bg-white/10')}
+                          title={push.isSubscribed ? 'Editar recordatorios' : 'Activar recordatorios'}
+                        >
+                          <BellRing size={18} />
+                        </button>
+                        <button
                          onClick={handleContinueRoute}
                          className="flex items-center justify-center gap-3 px-6 py-4 md:py-3 rounded-2xl bg-[#DEFF9A]/10 border border-[#DEFF9A]/20 text-[#DEFF9A] text-[10px] font-black uppercase tracking-widest hover:bg-[#DEFF9A] hover:text-[#061a1a] transition-all"
                        >
@@ -650,6 +666,13 @@ interface AlumnoMainboardProps {
         initialPrefs={push.prefs || { enabled: true, daysOfWeek: [1, 2, 3, 4, 5], hour: 20, minute: 0, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City' }}
         onSave={handleSavePrefs}
         onSendTest={handleSendTest}
+        isSubscribed={push.isSubscribed}
+        onUnsubscribe={async () => {
+          if (!currentUserId) return false;
+          const ok = await push.unsubscribe(currentUserId);
+          if (ok) setShowNotifBanner(true);
+          return ok;
+        }}
       />
 
       <AnimatePresence>
