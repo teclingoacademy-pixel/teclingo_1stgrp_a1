@@ -33,7 +33,9 @@ import {
   Shield,
   Camera,
   Upload,
-  BellRing
+  BellRing,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Sidebar, SidebarItem } from './Sidebar';
@@ -80,7 +82,7 @@ interface AlumnoMainboardProps {
   onRoleChange: (role: UserRole) => void;
 }
 
- export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardProps) {
+export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardProps) {
   const { 
     theme, 
     setTheme, 
@@ -116,6 +118,15 @@ interface AlumnoMainboardProps {
   const [presentationEditing, setPresentationEditing] = useState(false);
   const { currentWeek: studentCurrentWeek } = useStudentProgress(userEmail || undefined);
 
+  // FASE 3: attendance dinámico (se llena desde /api/user/:email)
+  const [attendancePercentage, setAttendancePercentage] = useState<number>(0);
+  const [attendanceStreak, setAttendanceStreak] = useState<number>(0);
+
+  // FASE 1: próxima clase
+  const [nextClass, setNextClass] = useState<any>(null);
+  const [loadingNextClass, setLoadingNextClass] = useState(true);
+  const [nextClassError, setNextClassError] = useState<string | null>(null);
+
   // Cargar userId y preferencias de notificaciones
   useEffect(() => {
     if (!userEmail) return;
@@ -130,6 +141,55 @@ interface AlumnoMainboardProps {
         await push.loadPreferences(uid);
       } catch (e) {
         console.warn('[AlumnoMainboard] Error cargando notificaciones:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userEmail]);
+
+  // FASE 3: cargar attendance real desde el perfil del alumno
+  useEffect(() => {
+    if (!userEmail) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(apiUrl('/api/user/' + encodeURIComponent(userEmail)));
+        const data = await res.json();
+        if (cancelled) return;
+        const u = data?.user || {};
+        setAttendanceStreak(u.streakDays || 0);
+        setAttendancePercentage(u.attendancePercentage || 0);
+      } catch (err) {
+        console.warn('[AlumnoMainboard/attendance]', err);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userEmail]);
+
+  // FASE 1: cargar próxima clase del alumno
+  useEffect(() => {
+    if (!userEmail) {
+      setLoadingNextClass(false);
+      return;
+    }
+    let cancelled = false;
+    setLoadingNextClass(true);
+    setNextClassError(null);
+    (async () => {
+      try {
+        const res = await fetch(apiUrl('/api/student/next-class?studentEmail=' + encodeURIComponent(userEmail)));
+        const data = await res.json();
+        if (cancelled) return;
+        if (data.ok) {
+          setNextClass(data);
+        } else {
+          setNextClassError(data.error || 'Error al cargar próxima clase');
+        }
+      } catch (err) {
+        if (cancelled) return;
+        console.error('[AlumnoMainboard/next-class]', err);
+        setNextClassError('Error de conexión');
+      } finally {
+        if (!cancelled) setLoadingNextClass(false);
       }
     })();
     return () => { cancelled = true; };
@@ -178,7 +238,6 @@ interface AlumnoMainboardProps {
   };
 
   // FIX 2026-09-30: al cambiar de vista/página se detiene TODO el TTS/audio activo
-  // (workbook, tools, voces del backend) para que no siga sonando en la vista nueva.
   useEffect(() => {
     return () => {
       stopAllAudio();
@@ -260,8 +319,6 @@ interface AlumnoMainboardProps {
     setPreselectedChatId(chatId);
     setCurrentView('mensajes');
   };
-  const attendancePercentage = 98;
-  const attendanceStreak = 12;
 
   // Cargar perfil del alumno para verificar si está completo
   useEffect(() => {
@@ -310,7 +367,7 @@ interface AlumnoMainboardProps {
       id: 'extracurricular', 
       label: 'EXTRACURRICULAR', 
       icon: Sparkles, 
-      badge: isExtracurricularUnlocked ? t('new') : 'PRÓXIMAMENTE',
+      badge: isExtracurricularUnlocked ? t('new') : 'PRÓXIMAMENTE', 
       category: 'Monitoreo & Innovación'
     },
     { id: 'evidencia', label: 'Evidencia SMART', icon: Camera, category: 'Monitoreo & Innovación' },
@@ -498,7 +555,7 @@ interface AlumnoMainboardProps {
                                    </div>
                                    <div className="p-4 md:p-6 rounded-2xl md:rounded-3xl bg-black/20 border border-white/5">
                                       <p className="text-white/20 text-[8px] font-black uppercase tracking-widest mb-2">Attendance Score</p>
-                                      <p className="text-2xl md:text-3xl font-black text-white">98%</p>
+                                      <p className="text-2xl md:text-3xl font-black text-white">{attendancePercentage}%</p>
                                    </div>
                                 </div>
                              </div>
@@ -524,10 +581,49 @@ interface AlumnoMainboardProps {
                     <div className="col-span-1 md:col-span-2 lg:col-span-4">
                        <GlassCard title="Próxima Clase" icon={Clock} accent="cyan">
                           <div className="space-y-6">
-                             <div className="flex justify-between items-center text-[9px] font-black text-white/30 uppercase tracking-[0.2em] pb-4 border-b border-white/5">
-                                <span>MAÑANA • 08:00 AM</span>
-                                <span>SALÓN 102</span>
-                             </div>
+                             {loadingNextClass ? (
+                                <div className="flex items-center justify-center py-6 text-white/40">
+                                   <Loader2 size={16} className="animate-spin mr-2" />
+                                   <span className="text-[9px] font-black uppercase tracking-widest">Cargando...</span>
+                                </div>
+                             ) : nextClassError ? (
+                                <div className="flex items-center gap-2 p-4 rounded-2xl bg-red-500/10 border border-red-500/20">
+                                   <AlertCircle size={14} className="text-red-400 shrink-0" />
+                                   <span className="text-red-400 text-[9px] font-black uppercase tracking-widest">{nextClassError}</span>
+                                </div>
+                             ) : !nextClass?.hasGroup ? (
+                                <div className="text-center py-6">
+                                   <p className="text-white/40 text-[10px] uppercase tracking-widest">No estás inscrito en ningún grupo todavía</p>
+                                </div>
+                             ) : !nextClass?.hasSchedule ? (
+                                <div className="text-center py-6">
+                                   <p className="text-white/40 text-[10px] uppercase tracking-widest">Tu grupo aún no tiene horario definido</p>
+                                </div>
+                             ) : !nextClass?.nextClass ? (
+                                <div className="text-center py-6">
+                                   <p className="text-white/40 text-[10px] uppercase tracking-widest">No hay clases programadas</p>
+                                </div>
+                             ) : (
+                                <>
+                                   <div className="flex justify-between items-center text-[9px] font-black text-white/30 uppercase tracking-[0.2em] pb-4 border-b border-white/5">
+                                      <span>{nextClass.nextClass.relativeLabel} • {nextClass.nextClass.time12h}</span>
+                                      <span>{nextClass.nextClass.location}</span>
+                                   </div>
+                                   <div className="space-y-3 pt-2">
+                                      <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#DEFF9A]/5 border border-[#DEFF9A]/10">
+                                         <div className="w-10 h-10 rounded-full bg-[#DEFF9A]/10 flex items-center justify-center text-[#DEFF9A] text-[10px] font-black shrink-0">
+                                            {nextClass.nextClass.teacherInitials}
+                                         </div>
+                                         <div className="flex-1 min-w-0">
+                                            <p className="text-white text-xs font-bold uppercase truncate">{nextClass.nextClass.groupName} · {nextClass.nextClass.nivel}</p>
+                                            <p className="text-white/40 text-[9px] font-bold uppercase truncate">
+                                               {nextClass.nextClass.teacherName ? 'Mtro. ' + nextClass.nextClass.teacherName : 'Sin docente asignado'}
+                                            </p>
+                                         </div>
+                                      </div>
+                                   </div>
+                                </>
+                             )}
                              
                              <div className="space-y-4">
                                 <p className="text-white/40 text-[9px] font-black uppercase tracking-widest">Tareas por Completar:</p>
