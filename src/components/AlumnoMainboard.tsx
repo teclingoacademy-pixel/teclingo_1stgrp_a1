@@ -62,6 +62,11 @@ import { ExtracurricularHub } from './ExtracurricularHub';
 import { ExtracurricularModal } from './ExtracurricularModal';
 import { WhatsAppButton, WHATSAPP_TEACHER_MESSAGE } from './WhatsAppButton';
 import { useAppContext } from '../context/AppContext';
+import { NotificationBanner } from './NotificationBanner';
+import { NotificationSettingsModal } from './NotificationSettingsModal';
+import { InstallTutorialModal } from './InstallTutorialModal';
+import { useDeviceDetection } from '../hooks/useDeviceDetection';
+import { usePushNotifications, NotificationPrefs } from '../hooks/usePushNotifications';
 import { useStudentProgress } from '../hooks/useStudentProgress';
 import { stopAllAudio } from '../utils/workbook/audioSupervisor';
 import { useMemo } from 'react';
@@ -97,10 +102,79 @@ interface AlumnoMainboardProps {
   const [showOnboardingModal, setShowOnboardingModal] = useState(false);
   const [studentProfileData, setStudentProfileData] = useState<Record<string, unknown>>({});
   const [selectedLessonId, setSelectedLessonId] = useState<string>('A1_C01');
+
+  // Notificaciones push
+  const [showNotifBanner, setShowNotifBanner] = useState(true);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [showNotifSettings, setShowNotifSettings] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const device = useDeviceDetection();
+  const push = usePushNotifications();
   const [presentationData, setPresentationData] = useState<PresentationData | null>(null);
   const [presentationLoading, setPresentationLoading] = useState(false);
   const [presentationEditing, setPresentationEditing] = useState(false);
   const { currentWeek: studentCurrentWeek } = useStudentProgress(userEmail || undefined);
+
+  // Cargar userId y preferencias de notificaciones
+  useEffect(() => {
+    if (!userEmail) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch(apiUrl('/api/user/' + encodeURIComponent(userEmail)));
+        const json = await res.json();
+        const uid = json?.user?.id;
+        if (cancelled || !uid) return;
+        setCurrentUserId(uid);
+        await push.loadPreferences(uid);
+      } catch (e) {
+        console.warn('[AlumnoMainboard] Error cargando notificaciones:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userEmail]);
+
+  // Handlers de notificaciones
+  const handleActivateNotifications = async () => {
+    if (!device.supportsPWA) return;
+    if (device.isIOS && !device.isStandalone) {
+      setShowInstallModal(true);
+      return;
+    }
+    const granted = await push.requestPermission();
+    if (granted && currentUserId) {
+      const defaultPrefs = push.prefs || {
+        enabled: true,
+        daysOfWeek: [1, 2, 3, 4, 5],
+        hour: 20,
+        minute: 0,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City',
+      };
+      await push.savePreferences(currentUserId, { ...defaultPrefs, enabled: true });
+      setShowNotifSettings(true);
+    }
+  };
+
+  const handleInstallContinue = async () => {
+    setShowInstallModal(false);
+    const granted = await push.requestPermission();
+    if (granted && currentUserId) {
+      setShowNotifSettings(true);
+    }
+  };
+
+  const handleSavePrefs = async (prefs: NotificationPrefs): Promise<boolean> => {
+    if (!currentUserId) return false;
+    if (!push.isSubscribed) {
+      return await push.subscribe(currentUserId, prefs);
+    }
+    return await push.savePreferences(currentUserId, prefs);
+  };
+
+  const handleSendTest = async (): Promise<boolean> => {
+    if (!currentUserId) return false;
+    return await push.sendTest(currentUserId);
+  };
 
   // FIX 2026-09-30: al cambiar de vista/página se detiene TODO el TTS/audio activo
   // (workbook, tools, voces del backend) para que no siga sonando en la vista nueva.
@@ -295,6 +369,12 @@ interface AlumnoMainboardProps {
             >
               {currentView === 'dashboard' ? (
                 <div className="space-y-8 md:space-y-12">
+                  {showNotifBanner && device.supportsPWA && !push.isSubscribed && (
+                    <NotificationBanner
+                      onActivate={handleActivateNotifications}
+                      onDismiss={() => setShowNotifBanner(false)}
+                    />
+                  )}
                   <header className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6">
                     <div>
                       <h2 className="text-[#DEFF9A] text-[10px] font-black uppercase tracking-[0.4em] mb-2 md:mb-3">Hola, Alumno_01!</h2>
@@ -555,6 +635,22 @@ interface AlumnoMainboardProps {
           </AnimatePresence>
         </div>
       </main>
+
+      {/* Modales de notificaciones */}
+      <InstallTutorialModal
+        isOpen={showInstallModal}
+        onClose={() => setShowInstallModal(false)}
+        device={device}
+        onContinue={handleInstallContinue}
+      />
+
+      <NotificationSettingsModal
+        isOpen={showNotifSettings}
+        onClose={() => setShowNotifSettings(false)}
+        initialPrefs={push.prefs || { enabled: true, daysOfWeek: [1, 2, 3, 4, 5], hour: 20, minute: 0, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'America/Mexico_City' }}
+        onSave={handleSavePrefs}
+        onSendTest={handleSendTest}
+      />
 
       <AnimatePresence>
         {showADNTest && (
