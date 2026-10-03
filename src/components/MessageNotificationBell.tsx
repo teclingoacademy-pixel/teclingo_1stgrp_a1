@@ -47,7 +47,7 @@ export function MessageNotificationBell({ onNavigateToChat, onNavigateToCalendar
         if (typeof p?.x === 'number' && typeof p?.y === 'number') return p;
       }
     } catch { /* noop */ }
-    return { x: (typeof window !== 'undefined' ? window.innerWidth : 1200) - 80, y: (typeof window !== 'undefined' ? window.innerHeight : 800) - 80 };
+    return { x: (typeof window !== 'undefined' ? window.innerWidth : 1200) - 80, y: 16 };
   });
   const [isDragging, setIsDragging] = useState(false);
   const dragOffsetRef = useRef<{ x: number; y: number } | null>(null);
