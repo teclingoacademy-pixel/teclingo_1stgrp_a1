@@ -81,25 +81,39 @@ router.get('/analytics/director', async (req: Request, res: Response) => {
     const days = Math.min(Number(req.query.days) || 7, 90);
     const since = new Date();
     since.setDate(since.getDate() - days);
+
+    // Sesiones en el período
     const sessions = await prisma.userSession.findMany({
       where: { startedAt: { gte: since } },
       select: { userId: true, startedAt: true, durationSec: true, endedAt: true },
     });
+
+    // Eventos en el período
     const events = await prisma.userActivity.findMany({
       where: { createdAt: { gte: since } },
       select: { userId: true, eventType: true, eventData: true, createdAt: true },
     });
+
+    // Usuarios únicos activos
     const uniqueUsers = new Set(sessions.map(s => s.userId));
+
+    // Duración promedio
     const completedSessions = sessions.filter(s => s.durationSec > 0);
     const avgDurationSec = completedSessions.length > 0
       ? Math.round(completedSessions.reduce((sum, s) => sum + s.durationSec, 0) / completedSessions.length)
       : 0;
+
+    // Total tiempo
     const totalTimeSec = sessions.reduce((sum, s) => sum + s.durationSec, 0);
+
+    // Sesiones por día
     const sessionsByDay: Record<string, number> = {};
     sessions.forEach(s => {
       const day = s.startedAt.toISOString().split('T')[0];
       sessionsByDay[day] = (sessionsByDay[day] || 0) + 1;
     });
+
+    // Herramientas más usadas
     const toolUsage: Record<string, number> = {};
     events.forEach(e => {
       if (e.eventType === 'tool_open' && e.eventData) {
@@ -108,6 +122,8 @@ router.get('/analytics/director', async (req: Request, res: Response) => {
         toolUsage[tool] = (toolUsage[tool] || 0) + 1;
       }
     });
+
+    // Páginas más vistas
     const pageViews: Record<string, number> = {};
     events.forEach(e => {
       if (e.eventType === 'page_view' && e.eventData) {
@@ -116,17 +132,53 @@ router.get('/analytics/director', async (req: Request, res: Response) => {
         pageViews[path] = (pageViews[path] || 0) + 1;
       }
     });
+
+    // Top usuarios (agrupados por userId)
+    const userSessionCount: Record<string, number> = {};
+    sessions.forEach(s => {
+      userSessionCount[s.userId] = (userSessionCount[s.userId] || 0) + 1;
+    });
+    const topUserIds = Object.entries(userSessionCount)
+      .sort(([, a], [, b]) => b - a)
+      .slice(0, 10)
+      .map(([userId]) => userId);
+
+    const usersInfo = topUserIds.length > 0
+      ? await prisma.user.findMany({
+          where: { id: { in: topUserIds } },
+          select: { id: true, email: true, name: true },
+        })
+      : [];
+
+    const topUsers = topUserIds.map(id => {
+      const u = usersInfo.find(x => x.id === id);
+      return {
+        id,
+        email: u?.email || '',
+        name: u?.name || null,
+        sessionCount: userSessionCount[id],
+      };
+    });
+
     res.json({
       success: true,
       data: {
+        period: { days, since: since.toISOString() },
         periodDays: days,
         totalSessions: sessions.length,
         uniqueUsers: uniqueUsers.size,
         avgDurationSec,
         totalTimeSec,
         sessionsByDay,
-        topTools: Object.entries(toolUsage).sort(([,a], [,b]) => b - a).slice(0, 10).map(([name, count]) => ({ name, count })),
-        topPages: Object.entries(pageViews).sort(([,a], [,b]) => b - a).slice(0, 10).map(([path, count]) => ({ path, count })),
+        topTools: Object.entries(toolUsage)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([name, count]) => ({ name, count })),
+        topPages: Object.entries(pageViews)
+          .sort(([, a], [, b]) => b - a)
+          .slice(0, 10)
+          .map(([path, count]) => ({ path, count })),
+        topUsers,
       },
     });
   } catch (error) {
