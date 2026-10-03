@@ -362,7 +362,13 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
     { id: 'pdp', label: t('pdp'), icon: BarChart3, category: 'Operaciones' },
     { id: 'presentation', label: 'Mi Presentación', icon: Sparkles, badge: 'NUEVO', category: 'Operaciones', isPrincipal: true },
 
-    { id: 'ai-support', label: t('ai_support'), icon: Sparkles, badge: t('new'), category: 'Monitoreo & Innovación', isPrincipal: true },
+    { 
+      id: 'venus-chat', 
+      label: 'Conversación en Inglés', 
+      icon: MessageSquare, 
+      badge: 'NUEVO', 
+      category: 'Monitoreo & Innovación' 
+    },
     { 
       id: 'extracurricular', 
       label: 'EXTRACURRICULAR', 
@@ -392,6 +398,11 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
         items={sidebarItems}
         currentView={currentView}
         onViewChange={(view) => {
+          if (view === 'venus-chat') {
+            const emailParam = userEmail ? '?user=' + encodeURIComponent(userEmail) : '';
+            window.open('https://teclingo-chat.vercel.app' + emailParam, '_blank');
+            return;
+          }
           if (view === 'extracurricular') {
             handleExtracurricular();
           } else {
