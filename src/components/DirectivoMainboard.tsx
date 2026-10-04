@@ -265,6 +265,13 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
     { id: 'folios', label: 'Gestión Folios', icon: FileText, badge: 'OFFICIAL', category: 'Operaciones' },
     { id: 'control-accesos', label: 'Control de Accesos', icon: Lock, badge: 'ESTRICTO', category: 'Operaciones' },
 
+    { 
+      id: 'venus-chat', 
+      label: 'Conversación en Inglés', 
+      icon: MessageSquare, 
+      badge: 'NUEVO', 
+      category: 'Monitoreo & Innovación' 
+    },
     { id: 'real-time', label: 'Real-Time', icon: Activity, category: 'Monitoreo & Innovación', isPrincipal: true },
     { id: 'audit', label: 'Academic Audit', icon: CheckSquare, category: 'Monitoreo & Innovación' },
     { id: 'alerts', label: 'Innovation Logs', icon: Terminal, badge: '12', category: 'Monitoreo & Innovación' },
@@ -279,6 +286,8 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
   const filteredSidebarItems = sidebarItems.filter(item => {
     // Siempre mostrar estos botones críticos
     if (item.id === 'settings' || item.id === 'dashboard' || item.id === 'control-accesos' || item.id === 'real-time') return true;
+    // Siempre mostrar Conversación en Inglés
+    if (item.id === 'venus-chat') return true;
     // Siempre mostrar Grados y Grupos (DEMANDA) — se valida al hacer click
     if (item.id === 'groups') return true;
     return !isViewDisabled(item.id);
@@ -289,7 +298,15 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
       <Sidebar
         items={filteredSidebarItems}
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={(view) => {
+          if (view === 'venus-chat') {
+            const email = (userEmail || '').trim();
+            const emailParam = email ? '?user=' + encodeURIComponent(email) : '';
+            window.open('https://teclingo-chat.vercel.app' + emailParam, '_blank');
+            return;
+          }
+          setCurrentView(view);
+        }}
         currentRole={currentRole}
         onRoleChange={onRoleChange}
         userName="Dir. Hub TECLINGO"
@@ -629,4 +646,3 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
     </div>
   );
 }
-

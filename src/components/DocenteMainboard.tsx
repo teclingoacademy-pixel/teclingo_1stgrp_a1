@@ -288,6 +288,13 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
     { id: 'disponibilidad', label: 'Asesorías / Slots', icon: Clock, badge: 'SYNC', category: 'Operaciones' },
     { id: 'folios', label: 'Folios', icon: FileText, category: 'Operaciones' },
 
+    { 
+      id: 'venus-chat', 
+      label: 'Conversación en Inglés', 
+      icon: MessageSquare, 
+      badge: 'NUEVO', 
+      category: 'Monitoreo & Innovación' 
+    },
     { id: 'evidencias', label: 'Evidencias', icon: Camera, category: 'Monitoreo & Innovación' },
     { id: 'evidencias-recibidas', label: 'Evidencias Recibidas', icon: Image, badge: 'GRUPOS', category: 'Monitoreo & Innovación' },
     { id: 'reconocimiento', label: 'Reconocimiento / Muro', icon: Award, category: 'Monitoreo & Innovación' },
@@ -298,7 +305,15 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
       <Sidebar
         items={sidebarItems}
         currentView={currentView}
-        onViewChange={setCurrentView}
+        onViewChange={(view) => {
+          if (view === 'venus-chat') {
+            const email = (userEmail || '').trim();
+            const emailParam = email ? '?user=' + encodeURIComponent(email) : '';
+            window.open('https://teclingo-chat.vercel.app' + emailParam, '_blank');
+            return;
+          }
+          setCurrentView(view);
+        }}
         currentRole={currentRole}
         onRoleChange={onRoleChange}
         userName="Ana López"
