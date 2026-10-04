@@ -370,6 +370,14 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
       category: 'Monitoreo & Innovación' 
     },
     { 
+      id: 'ai-support', 
+      label: t('ai_support'), 
+      icon: Sparkles, 
+      badge: t('new'), 
+      category: 'Monitoreo & Innovación', 
+      isPrincipal: true 
+    },
+    { 
       id: 'extracurricular', 
       label: 'EXTRACURRICULAR', 
       icon: Sparkles, 
