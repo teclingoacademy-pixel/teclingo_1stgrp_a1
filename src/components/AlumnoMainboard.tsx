@@ -710,7 +710,13 @@ export function AlumnoMainboard({ currentRole, onRoleChange }: AlumnoMainboardPr
                   <PresentationForm
                     onSubmit={handleGeneratePresentation}
                     loading={presentationLoading}
-                    initialValues={presentationData || undefined}
+                    initialValues={presentationData ? {
+                      section1Spanish: presentationData.section1Spanish ?? undefined,
+                      section2Spanish: presentationData.section2Spanish ?? undefined,
+                      section3Spanish: presentationData.section3Spanish ?? undefined,
+                      section4Spanish: presentationData.section4Spanish ?? undefined,
+                      section5Spanish: presentationData.section5Spanish ?? undefined,
+                    } : undefined}
                   />
                 ) : (
                   <PresentationResult

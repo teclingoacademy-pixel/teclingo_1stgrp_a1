@@ -66,6 +66,7 @@ import { QuickChat } from './QuickChat';
 import { MessageNotificationBell } from './MessageNotificationBell';
 import { TeacherGrades } from './TeacherGrades';
 import { ProfileOnboardingModal, isProfileComplete } from './ProfileOnboardingModal';
+import { AISkillsSupport } from './AISkillsSupport';
 import { obtenerPerfilCompleto, listarGruposIngles, obtenerMiembrosDeGrupo } from '../services/identityService';
 import type { GrupoIngles, MiembroGrupo } from '../services/identityService';
 
@@ -292,6 +293,13 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
       id: 'venus-chat', 
       label: 'Conversación en Inglés', 
       icon: MessageSquare, 
+      badge: 'NUEVO', 
+      category: 'Monitoreo & Innovación' 
+    },
+    { 
+      id: 'ai-support', 
+      label: 'AI Support', 
+      icon: Sparkles, 
       badge: 'NUEVO', 
       category: 'Monitoreo & Innovación' 
     },
@@ -795,6 +803,8 @@ export function DocenteMainboard({ currentRole, onRoleChange }: DocenteMainboard
                 <DocenteReconocimiento />
               ) : currentView === 'disponibilidad' ? (
                 <AvailabilityModule />
+              ) : currentView === 'ai-support' ? (
+                <AISkillsSupport />
               ) : currentView === 'settings' ? (
                 <UserSettings role="DOCENTE" />
               ) : (

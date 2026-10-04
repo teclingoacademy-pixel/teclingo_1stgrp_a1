@@ -37,7 +37,8 @@ import {
   Copy,
   Check,
   KeyRound,
-  Hash
+  Hash,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useAppContext } from '../context/AppContext';
@@ -67,6 +68,7 @@ import { stopAllAudio } from '../utils/workbook/audioSupervisor';
 import { AccessControlModule } from './AccessControlModule';
 import { AsistenciasMaster } from './AsistenciasMaster';
 import { ProfileOnboardingModal, isProfileComplete } from './ProfileOnboardingModal';
+import { AISkillsSupport } from './AISkillsSupport';
 import { obtenerPerfilCompleto, obtenerCredencial } from '../services/identityService';
 import { fetchCalendarEvents, CalendarEvent } from '../services/calendarService';
 import { downloadCredentialCardPdf, shareCredentialCardPdf, CredentialCardData, CredentialRole } from '../services/credentialPdfService';
@@ -272,6 +274,13 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
       badge: 'NUEVO', 
       category: 'Monitoreo & Innovación' 
     },
+    { 
+      id: 'ai-support', 
+      label: 'AI Support', 
+      icon: Sparkles, 
+      badge: 'NUEVO', 
+      category: 'Monitoreo & Innovación' 
+    },
     { id: 'real-time', label: 'Real-Time', icon: Activity, category: 'Monitoreo & Innovación', isPrincipal: true },
     { id: 'audit', label: 'Academic Audit', icon: CheckSquare, category: 'Monitoreo & Innovación' },
     { id: 'alerts', label: 'Innovation Logs', icon: Terminal, badge: '12', category: 'Monitoreo & Innovación' },
@@ -286,8 +295,9 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
   const filteredSidebarItems = sidebarItems.filter(item => {
     // Siempre mostrar estos botones críticos
     if (item.id === 'settings' || item.id === 'dashboard' || item.id === 'control-accesos' || item.id === 'real-time') return true;
-    // Siempre mostrar Conversación en Inglés
+    // Siempre mostrar Conversación en Inglés y AI Support
     if (item.id === 'venus-chat') return true;
+    if (item.id === 'ai-support') return true;
     // Siempre mostrar Grados y Grupos (DEMANDA) — se valida al hacer click
     if (item.id === 'groups') return true;
     return !isViewDisabled(item.id);
@@ -617,6 +627,8 @@ export function DirectivoMainboard({ currentRole, onRoleChange }: DirectivoMainb
                 <AccessControlModule />
               ) : currentView === 'real-time' ? (
                 <RealTimeMonitorPanel />
+              ) : currentView === 'ai-support' ? (
+                <AISkillsSupport />
               ) : currentView === 'settings' ? (
                 <UserSettings role="DIRECTOR" />
               ) : (
