@@ -8,6 +8,12 @@
  * 2. frase_traduccion: Traducción al español de la frase en inglés
  * 3. opciones_traduccion_json / opciones_traduccion: Traducciones de cada opción
  * 4. pista_vocabulario: Pista pedagógica sobre dónde buscar la respuesta
+ *
+ * REGLA UNIVERSAL (2026-10-04):
+ * TODAS las preguntas de TODAS las clases muestran la traducción completa al español
+ * (frase_traduccion) con botón de ocultar/mostrar. Se eliminó el sistema de
+ * andamiaje por número de clase (completa/parcial/ninguna) porque la decisión
+ * de producto es: el alumno SIEMPRE puede ver la traducción si la necesita.
  */
 
 import React, { useState, useEffect } from 'react';
@@ -406,12 +412,12 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     // 1. Espacios alrededor de apóstrofes: "i 'm" → "i'm"
     out = out.replace(/s+'s*/g, "'");
     // 2. Expandir contracciones comunes
-    out = out.replace(/(w+)'m/g, '$1 am');
-    out = out.replace(/(w+)'re/g, '$1 are');
-    out = out.replace(/(w+)'ve/g, '$1 have');
-    out = out.replace(/(w+)'ll/g, '$1 will');
-    out = out.replace(/(w+)'d/g, '$1 would');
-    out = out.replace(/(w+)n't/g, '$1 not');
+    out = out.replace(/(w+)'m/g, '$1 am');
+    out = out.replace(/(w+)'re/g, '$1 are');
+    out = out.replace(/(w+)'ve/g, '$1 have');
+    out = out.replace(/(w+)'ll/g, '$1 will');
+    out = out.replace(/(w+)'d/g, '$1 would');
+    out = out.replace(/(w+)n't/g, '$1 not');
     // 3. Quitar puntuación
     out = out.replace(/[.,!?;:¿¡"«»()[]]/g, '');
     // 4. Colapsar espacios
@@ -552,10 +558,19 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     setShowPista(false);
   }, [reactivo.reactivo_id]);
 
-  // Andamiaje pedagógico (Scaffolding):
-  // - A1_C01 (Fase Cero): 'completa' -> Traducción completa
-  // - A1_C02 a A1_C05: 'parcial' -> Solo palabras clave
-  // - A1_C06 en adelante: 'ninguna' -> Sin traducción (inmersión total)
+  // ═══════════════════════════════════════════════════════════════
+  // MODO DE TRADUCCIÓN — REGLA UNIVERSAL
+  // ═══════════════════════════════════════════════════════════════
+  // TODAS las preguntas de TODAS las clases muestran la traducción completa
+  // al español (reactivo.frase_traduccion) con botón de ocultar/mostrar.
+  //
+  // Históricamente había 3 modos (completa/parcial/ninguna) según el número
+  // de clase. Eso confundía a los alumnos y ocultaba la traducción en clases
+  // avanzadas. La decisión de producto (2026-10-04) es: SIEMPRE mostrar la
+  // traducción, el alumno decide si la ve u oculta con el botón.
+  //
+  // El campo `mostrar_traduccion` (de la BD) sigue respetándose si está definido,
+  // para mantener compatibilidad con contenido legacy que lo use explícitamente.
   const modoTraduccion: 'completa' | 'parcial' | 'ninguna' = React.useMemo(() => {
     if (reactivo.mostrar_traduccion) {
       const val = reactivo.mostrar_traduccion.toLowerCase().trim();
@@ -563,30 +578,9 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
         return val as 'completa' | 'parcial' | 'ninguna';
       }
     }
-
-    // Nuevo sistema: CLASE_XX (35 clases basadas en videos)
-    // - CLASE_00, CLASE_01: 'completa' (andamiaje máximo)
-    // - CLASE_02 a CLASE_05: 'parcial' (solo palabras clave)
-    // - CLASE_06 en adelante: 'ninguna' (inmersión total)
-    const matchNew = reactivo.clase_id?.match(/^CLASE_(\d+)$/i);
-    if (matchNew) {
-      const classNum = parseInt(matchNew[1], 10);
-      if (classNum <= 1) return 'completa';
-      if (classNum >= 2 && classNum <= 5) return 'parcial';
-      return 'ninguna';
-    }
-
-    // Sistema legacy: A1_CXX (compatibilidad hacia atrás)
-    const matchOld = reactivo.clase_id?.match(/C0?(\d+)/i);
-    if (matchOld) {
-      const classNum = parseInt(matchOld[1], 10);
-      if (classNum === 1) return 'completa';
-      if (classNum >= 2 && classNum <= 5) return 'parcial';
-      return 'ninguna';
-    }
-
+    // Regla universal: siempre 'completa' (traducción visible con botón)
     return 'completa';
-  }, [reactivo.mostrar_traduccion, reactivo.clase_id]);
+  }, [reactivo.mostrar_traduccion]);
 
   const palabrasClaveText: string = React.useMemo(() => {
     if (reactivo.palabras_clave_traduccion) {
@@ -886,6 +880,7 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
           </div>
 
           {/* Andamiaje Pedagógico (Scaffolding): Control de Traducción */}
+          {/* REGLA UNIVERSAL: SIEMPRE mostrar la traducción con botón de ocultar/mostrar */}
           {modoTraduccion === 'completa' && reactivo.frase_traduccion && (
             <div className="mt-2.5 pt-2 border-t border-gray-200/70 flex items-center justify-between text-xs sm:text-sm">
               <div className="text-gray-600 font-sans italic flex items-center gap-1.5 min-w-0">
@@ -1158,4 +1153,3 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
 };
 
 export default ReactivoCard;
-
