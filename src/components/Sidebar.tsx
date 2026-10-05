@@ -76,11 +76,14 @@ export function Sidebar({
     isDemoMode
   } = useAppContext();
 
+    // FIX 2026-10-04: las categorías arrancan EXPANDIDAS para que el usuario
+  // vea todos los items disponibles (venus-chat, ai-support, etc.) sin
+  // tener que tocar el chevron. Puede colapsarlas manualmente si quiere.
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({
-    'Soporte & Global': false,
-    'Académico': false,
-    'Operaciones': false,
-    'Monitoreo & Innovación': false
+    'Soporte & Global': true,
+    'Académico': true,
+    'Operaciones': true,
+    'Monitoreo & Innovación': true
   });
 
   useEffect(() => {
