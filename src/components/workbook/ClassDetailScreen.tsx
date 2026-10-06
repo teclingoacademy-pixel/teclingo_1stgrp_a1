@@ -1171,7 +1171,9 @@ useEffect(() => {
                 ].map((skill) => {
                   const Icon = skill.icon;
                   const correctCount = getSkillCount(skill.key);
-                  const isDone = correctCount >= 5;
+                  const TOTAL_PER_SKILL = 10;
+                  const isDone = correctCount >= TOTAL_PER_SKILL;      // 100% completado
+                  const isStarted = correctCount > 0 && !isDone;       // iniciado pero no terminado
 
                   return (
                     <button
@@ -1181,17 +1183,27 @@ useEffect(() => {
                         if (isDone) { setConfirmViewSkill(skill.key); }
                         else { startSkillExercise(skill.key, false); }
                       }}
-                      className={`relative p-3.5 sm:p-4 rounded-xl border transition-all duration-200 text-left flex flex-col justify-between cursor-pointer group shadow-xs active:scale-98 ${isDone ? 'border-[#00F5D4] bg-[#00F5D4]/10 ring-2 ring-[#00F5D4]/40 shadow-[0_0_15px_rgba(0,245,212,0.25)]' : skill.border + ' ' + skill.bg + ' hover:shadow-md hover:scale-[1.02] sm:hover:scale-105'}`}
+                      className={`relative p-3.5 sm:p-4 rounded-xl border transition-all duration-200 text-left flex flex-col justify-between cursor-pointer group shadow-xs active:scale-98 ${
+                        isDone
+                          ? 'border-[#00F5D4] bg-[#00F5D4]/10 ring-2 ring-[#00F5D4]/40 shadow-[0_0_15px_rgba(0,245,212,0.25)]'
+                          : isStarted
+                            ? 'border-orange-400 bg-orange-50 ring-2 ring-orange-300/40 shadow-[0_0_12px_rgba(251,146,60,0.2)] hover:bg-orange-100/70 hover:scale-[1.02]'
+                            : skill.border + ' ' + skill.bg + ' hover:shadow-md hover:scale-[1.02] sm:hover:scale-105'
+                      }`}
                     >
                       <div className="flex items-center justify-between mb-2 sm:mb-3">
                         <Icon className={`w-5 h-5 sm:w-6 sm:h-6 ${skill.color} shrink-0`} />
                         {isDone ? (
                           <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-mono font-bold flex items-center gap-1 border border-emerald-300">
-                            <CheckCircle2 className="w-3 h-3" /> 5/5
+                            <CheckCircle2 className="w-3 h-3" /> {TOTAL_PER_SKILL}/{TOTAL_PER_SKILL}
+                          </span>
+                        ) : isStarted ? (
+                          <span className="px-2 py-0.5 rounded-full bg-orange-100 text-orange-800 text-[10px] font-mono font-bold border border-orange-300">
+                            {correctCount}/{TOTAL_PER_SKILL} · {Math.round((correctCount / TOTAL_PER_SKILL) * 100)}%
                           </span>
                         ) : (
                           <span className="text-[10px] font-mono text-gray-500">
-                            {correctCount}/5 resueltos
+                            {correctCount}/{TOTAL_PER_SKILL} resueltos
                           </span>
                         )}
                       </div>

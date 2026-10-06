@@ -1,3 +1,7 @@
+// ═══════════════════════════════════════════════════════════════
+// TECLINGO - Prisma Schema
+// ═══════════════════════════════════════════════════════════════
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -6,6 +10,10 @@ datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
 }
+
+// ═══════════════════════════════════════════════════════════════
+// USUARIOS Y AUTENTICACIÓN
+// ═══════════════════════════════════════════════════════════════
 
 model User {
   examResults   ExamResult[]
@@ -67,9 +75,12 @@ model Credential {
   qrValue          String?
   issuedAt         DateTime @default(now())
   updatedAt        DateTime @updatedAt
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ═══════════════════════════════════════════════════════════════
+// LECCIONES Y CONTENIDO PEDAGÓGICO
+// ═══════════════════════════════════════════════════════════════
 
 model Lesson {
   id           String         @id
@@ -98,23 +109,19 @@ model Lesson {
   videoUrl        String?
   tituloVideo     String?
   temaPrincipal   String?
-  tipoContenido   String?  // original | repaso | taller
+  tipoContenido   String?
   duracionMin     Int?
   semana          Int?
-  sesion          String?  // A | B
+  sesion          String?
 }
-
-// ===================================================================
-// PLANEACIÓN ACADÉMICA (Study Plan)
-// ===================================================================
 
 model StudyLevel {
   id          String      @id @default(uuid())
-  code        String      @unique   // "S01"
-  semester    String                // "Semestre 01"
-  cefrTag     String                // "A1.1"
-  levelName   String                // "Principiante"
-  order       Int                   // 1..6
+  code        String      @unique
+  semester    String
+  cefrTag     String
+  levelName   String
+  order       Int
   isPublished Boolean     @default(false)
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
@@ -124,8 +131,8 @@ model StudyLevel {
 model StudyWeek {
   id          String     @id @default(uuid())
   levelId     String
-  weekNumber  Int                   // 1..18
-  phase       String?               // F1 | F2 | F3 | F4
+  weekNumber  Int
+  phase       String?
   fechas      String
   ejeTematico String
   unidadLibro String
@@ -140,6 +147,10 @@ model StudyWeek {
   @@unique([levelId, weekNumber])
   @@index([levelId])
 }
+
+// ═══════════════════════════════════════════════════════════════
+// EJERCICIOS
+// ═══════════════════════════════════════════════════════════════
 
 model Exercise {
   examQuestions   ExamQuestion[]
@@ -162,20 +173,19 @@ model Exercise {
   timeLimitSec        Int          @default(30)
   difficulty          Int          @default(1)
   active              Boolean      @default(true)
-  // ─── CAMPOS NUEVOS CONTENIDO (2026-09-25) ───
-  uiDisplay       String?
-  instructionTTS  Json?
-  audioUI         String?
-  audioTTS        Json?
-  acceptedAnswers String[] @default([])
-  aiToolTags      String[] @default([])
-  voz             String   @default("female")
-  vocabLinks      ExerciseVocabulary[]
-    perfil       String   @default("")
-    fase         String   @default("F1")
-    parrafos     Int      @default(1)
+  uiDisplay           String?
+  instructionTTS      Json?
+  audioUI             String?
+  audioTTS            Json?
+  acceptedAnswers     String[]     @default([])
+  aiToolTags          String[]     @default([])
+  voz                 String       @default("female")
+  vocabLinks          ExerciseVocabulary[]
+  perfil              String       @default("")
+  fase                String       @default("F1")
+  parrafos            Int          @default(1)
 
-  lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  lesson              Lesson       @relation(fields: [lessonId], references: [id], onDelete: Cascade)
   submissions         Submission[]
 }
 
@@ -203,6 +213,10 @@ model Submission {
   exercise     Exercise @relation(fields: [exerciseId], references: [id], onDelete: Restrict)
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ═══════════════════════════════════════════════════════════════
+// PERFILES
+// ═══════════════════════════════════════════════════════════════
 
 model DirectorProfile {
   id                    String    @id @default(uuid())
@@ -259,7 +273,6 @@ model TeacherProfile {
   directorEmail    String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -282,9 +295,12 @@ model StudentProfile {
   directorEmail    String?
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
+
+// ═══════════════════════════════════════════════════════════════
+// GRUPOS
+// ═══════════════════════════════════════════════════════════════
 
 model EnglishGroup {
   id                String   @id @default(uuid())
@@ -317,9 +333,7 @@ model EnglishGroupSchedule {
   dias       String
   orden      Int      @default(1)
   createdAt  DateTime @default(now())
-
   group EnglishGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-
   @@unique([groupId, orden])
 }
 
@@ -334,10 +348,8 @@ model GroupMember {
   asignadoPor     String?
   activo          Boolean  @default(true)
   createdAt       DateTime @default(now())
-
   group EnglishGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([groupId, userId])
 }
 
@@ -353,18 +365,18 @@ model Attendance {
   metodo       String?  @default("MANUAL")
   registradoPor String?
   docenteEmail String?
-  /// Tipo de lectura: siempre ENTRADA (universitario solo registra ingreso).
-  /// Reservado para futuro: ENTRADA | SALIDA
   tipoLectura  String?  @default("ENTRADA")
   createdAt    DateTime @default(now())
-
   group EnglishGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([groupId, userId, fecha])
   @@index([groupId, fecha])
   @@index([userId, fecha])
 }
+
+// ═══════════════════════════════════════════════════════════════
+// METAS Y LOGROS
+// ═══════════════════════════════════════════════════════════════
 
 model Goal {
   id          String   @id @default(uuid())
@@ -376,7 +388,6 @@ model Goal {
   status      String   @default("ACTIVE")
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -387,7 +398,6 @@ model Achievement {
   description String?
   icon        String?
   unlockedAt  DateTime @default(now())
-
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 }
 
@@ -402,13 +412,16 @@ model CalendarEvent {
   time            String?
   visibility      String?
   createdBy       String?
-  institutionCode String?  // Calendario: aísla eventos por institución
+  institutionCode String?
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
-
   @@index([year, month])
   @@index([institutionCode])
 }
+
+// ═══════════════════════════════════════════════════════════════
+// MENSAJERÍA
+// ═══════════════════════════════════════════════════════════════
 
 model Conversation {
   id             String           @id
@@ -421,11 +434,9 @@ model Conversation {
   lastMessageAt  DateTime?
   createdAt      DateTime         @default(now())
   updatedAt      DateTime         @updatedAt
-
   group    EnglishGroup?        @relation(fields: [groupId], references: [id], onDelete: SetNull)
   members  ConversationMember[]
   messages Message[]
-
   @@index([type])
   @@index([groupId])
   @@index([lastMessageAt])
@@ -440,10 +451,8 @@ model ConversationMember {
   role           String    @default("MEMBER")
   lastReadAt     DateTime?
   joinedAt       DateTime  @default(now())
-
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   user         User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([conversationId, userId])
   @@index([userId])
   @@index([email])
@@ -462,19 +471,22 @@ model Message {
   createdAt      DateTime  @default(now())
   editedAt       DateTime?
   deletedAt      DateTime?
-
   conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
   sender       User         @relation(fields: [senderId], references: [id], onDelete: Cascade)
-
   @@index([conversationId, createdAt])
   @@index([senderId])
 }
+
+// ═══════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════
 
 enum ConversationType {
   GLOBAL
   GROUP
   DIRECT
 }
+
 enum Role {
   STUDENT
   TEACHER
@@ -490,9 +502,9 @@ enum Skill {
   WRITING
 }
 
-// ===================================================================
-// CONTENIDO PEDAGÓGICO (Vocabulary)
-// ===================================================================
+// ═══════════════════════════════════════════════════════════════
+// VOCABULARIO Y TEXTOS
+// ═══════════════════════════════════════════════════════════════
 
 model VocabularyItem {
   id              String   @id @default(uuid())
@@ -536,17 +548,15 @@ model TextBase {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-
   @@index([lessonId])
   perfil       String   @default("")
   fase         String   @default("F1")
   parrafos     Int      @default(1)
 }
 
-
-// ===================================================================
-// EXÁMENES — Ubicación, Intermedios y Final MCER
-// ===================================================================
+// ═══════════════════════════════════════════════════════════════
+// EXÁMENES
+// ═══════════════════════════════════════════════════════════════
 
 enum ExamType {
   UBICACION
@@ -557,21 +567,20 @@ enum ExamType {
 model Exam {
   questions       ExamQuestion[]
   id              String   @id @default(uuid())
-  code            String   @unique   // EXAM_UBICACION, EXAM_INT_1, EXAM_INT_2, EXAM_FINAL
+  code            String   @unique
   title           String
   type            ExamType
-  weekNumber      Int?               // null para ubicación, 4/8/14 para los demás
-  durationMinutes Int                // 45, 120, 120, 120
-  totalQuestions  Int                // 50, 50, 50, 100
-  passingScore    Float              // 0 (ubicación), 70, 70, 75
-  coverageFrom    String?            // A1_C00
-  coverageTo      String?            // A1_C05 / A1_C11 / A1_C18
+  weekNumber      Int?
+  durationMinutes Int
+  totalQuestions  Int
+  passingScore    Float
+  coverageFrom    String?
+  coverageTo      String?
   description     String?
   isPublished     Boolean  @default(true)
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   results         ExamResult[]
-
   @@index([type])
   @@index([weekNumber])
 }
@@ -580,22 +589,17 @@ model ExamResult {
   id           String   @id @default(uuid())
   userId       String
   examId       String
-  score        Float              // 0-100
-  percentage   Float              // mismo que score, por claridad
+  score        Float
+  percentage   Float
   passed       Boolean
   completedAt  DateTime @default(now())
   exam         Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([userId, examId])
   @@index([userId])
   @@index([examId])
 }
 
-
-// ===================================================================
-// EXAM QUESTION — Pool de ejercicios asignados a cada examen
-// ===================================================================
 model ExamQuestion {
   id          String   @id @default(uuid())
   examId      String
@@ -606,35 +610,32 @@ model ExamQuestion {
   createdAt   DateTime @default(now())
   exam        Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   exercise    Exercise @relation(fields: [exerciseId], references: [id], onDelete: Cascade)
-
   @@unique([examId, exerciseId])
   @@index([examId, skill])
   @@index([exerciseId])
 }
 
+// ═══════════════════════════════════════════════════════════════
+// TEACHER SCRIPT (BILINGÜE)
+// ═══════════════════════════════════════════════════════════════
 
-// ===================================================================
-// TEACHER SCRIPT — Guion narrado del Teacher Virtual por leccion
-// ===================================================================
 model TeacherScript {
-  id        String   @id @default(uuid())
-  lessonId  String   @unique
-  title     String
-  content   String   // Guion completo del Teacher Virtual
-  duration  Int      @default(120) // Duracion estimada en segundos
-  updatedAt DateTime @updatedAt
-  lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+  id         String   @id @default(uuid())
+  lessonId   String   @unique
+  title      String
+  content    String
+  contentEn  String?
+  duration   Int      @default(120)
+  updatedAt  DateTime @updatedAt
+  lesson     Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 
   @@index([lessonId])
 }
 
-// ===================================================================
-// BASE DE CONOCIMIENTOS PEDAGOGICA — V4
-// Todo el contenido pedagogico vive aqui. El frontend NO contiene
-// contenido pedagogico: solo lo consume via /api/knowledge/*
-// ===================================================================
+// ═══════════════════════════════════════════════════════════════
+// BASE DE CONOCIMIENTOS PEDAGÓGICA
+// ═══════════════════════════════════════════════════════════════
 
-/// Secciones de teoria del acordeon de clase (ClassTheoryAccordion)
 model LessonTheorySection {
   id        String   @id @default(uuid())
   lessonId  String
@@ -644,12 +645,10 @@ model LessonTheorySection {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   lesson    Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-
   @@unique([lessonId, order])
   @@index([lessonId])
 }
 
-/// Guia rapida por habilidad (modales tutoriales de reactivo)
 model SkillTutorial {
   id              String   @id @default(uuid())
   skill           Skill    @unique
@@ -664,7 +663,6 @@ model SkillTutorial {
   updatedAt       DateTime @updatedAt
 }
 
-/// Biblioteca de gramatica (AITutor / GrammarFixer)
 model GrammarTopic {
   id          String   @id
   title       String
@@ -680,7 +678,6 @@ model GrammarTopic {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   examples    GrammarExample[]
-
   @@index([mcer])
   @@index([category])
 }
@@ -693,11 +690,9 @@ model GrammarExample {
   es      String
   note    String?
   topic   GrammarTopic @relation(fields: [topicId], references: [id], onDelete: Cascade)
-
   @@index([topicId])
 }
 
-/// Mapa clase -> temas de gramatica y vocabulario (AI Tutor)
 model ClassKnowledgeMap {
   lessonId      String   @id
   grammarTopics String[] @default([])
@@ -706,7 +701,6 @@ model ClassKnowledgeMap {
   lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 }
 
-/// Malla pedagogica: semana -> lecciones (ProgressMap del alumno)
 model MallaWeek {
   id            String   @id @default(uuid())
   levelCode     String
@@ -720,12 +714,10 @@ model MallaWeek {
   mcer          String?
   grammarFocus  String?
   lessons       Lesson[] @relation("MallaWeekLessons")
-
   @@unique([levelCode, weekNumber])
   @@index([levelCode])
 }
 
-/// Fases del curso A1+ (coursePhasesA1Plus)
 model CoursePhase {
   id          String @id @default(uuid())
   code        String @unique
@@ -738,10 +730,9 @@ model CoursePhase {
   mcer        String
 }
 
-/// Curriculum por semestre (panel del Director)
 model ProgramSemester {
   id      String          @id @default(uuid())
-  code    String          @unique // "Semestre 01"
+  code    String          @unique
   name    String
   order   Int
   cefrTag String
@@ -760,12 +751,10 @@ model SemesterSkill {
   accreditation String
   description   String
   semester      ProgramSemester @relation(fields: [semesterCode], references: [code], onDelete: Cascade)
-
   @@unique([semesterCode, skill])
   @@index([semesterCode])
 }
 
-/// Referencia MCER A1+ — Modelo de Produccion Final
 model ProductionModelText {
   id      String @id
   profile String
@@ -775,7 +764,6 @@ model ProductionModelText {
   order   Int    @default(0)
 }
 
-/// Bloques gramaticales del modelo de produccion
 model GrammarBlock {
   id         String   @id @default(uuid())
   number     Int      @unique
@@ -785,7 +773,6 @@ model GrammarBlock {
   structures String[] @default([])
 }
 
-/// Matriz estructura -> bloque / textos modelo
 model GrammarStructure {
   id        String  @id @default(uuid())
   structure String  @unique
@@ -796,17 +783,14 @@ model GrammarStructure {
   t3        Boolean @default(false)
 }
 
-/// Bloques de vocabulario (contrato de leccion y modelo de produccion)
 model VocabBlock {
   id     String   @id
-  source String // "production" | "contract"
+  source String
   label  String
   words  String[] @default([])
-
   @@index([source])
 }
 
-/// Contrato leccion <-> texto <-> vocabulario <-> estructura
 model LessonContract {
   id           String   @id @default(uuid())
   lessonId     String   @unique
@@ -819,7 +803,6 @@ model LessonContract {
   lesson       Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
 }
 
-/// Detalle curricular por clase (ficha de video / foco pedagogico)
 model LessonCurriculum {
   id              String   @id @default(uuid())
   lessonId        String   @unique
@@ -833,11 +816,9 @@ model LessonCurriculum {
   keyStructures   String[] @default([])
   suggestedPrompt String
   lesson          Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-
   @@index([lessonId])
 }
 
-/// Tip / nota gramatical de la leccion ("LA REGLA DE ORO")
 model LessonGrammarTip {
   id            String   @id @default(uuid())
   lessonId      String
@@ -846,11 +827,9 @@ model LessonGrammarTip {
   commonMistake String?
   examples      Json
   lesson        Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-
   @@index([lessonId])
 }
 
-/// Vocabulario rapido destacado de la leccion
 model LessonQuickVocab {
   id          String @id @default(uuid())
   lessonId    String
@@ -858,47 +837,38 @@ model LessonQuickVocab {
   word        String
   translation String
   lesson      Lesson @relation(fields: [lessonId], references: [id], onDelete: Cascade)
-
   @@unique([lessonId, order])
   @@index([lessonId])
 }
-// ===================================================================
-// PRESENTACIÓN PERSONAL DEL ALUMNO (Proyecto Final MCER A1)
-// ===================================================================
+
+// ═══════════════════════════════════════════════════════════════
+// PRESENTACIÓN PERSONAL Y ANALYTICS
+// ═══════════════════════════════════════════════════════════════
+
 model StudentPresentation {
   id              String   @id @default(uuid())
   userId          String
-  // Secciones escritas por el alumno en español
-  section1Spanish String?  // Introducción
-  section2Spanish String?  // Ocupación / Vida
-  section3Spanish String?  // Rutina diaria
-  section4Spanish String?  // Pasado reciente
-  section5Spanish String?  // Planes futuros
-  // Traducciones al inglés
+  section1Spanish String?
+  section2Spanish String?
+  section3Spanish String?
+  section4Spanish String?
+  section5Spanish String?
   section1English String?
   section2English String?
   section3English String?
   section4English String?
   section5English String?
-  // Presentación final generada
   fullPresentation String?
-  // Estado
-  status          String   @default("draft") // draft | generated | practiced
-  // Métricas
+  status          String   @default("draft")
   timesPracticed  Int      @default(0)
   lastPracticedAt DateTime?
-  // Metadata
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@unique([userId])
   @@index([userId])
 }
 
-// ===================================================================
-// PRONUNCIATION ATTEMPTS — Historial de intentos de pronunciación
-// ===================================================================
 model PronunciationAttempt {
   id           String   @id @default(uuid())
   userId       String
@@ -910,15 +880,11 @@ model PronunciationAttempt {
   missedWords  String[] @default([])
   createdAt    DateTime @default(now())
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, createdAt])
   @@index([source])
   @@index([userId, source])
 }
 
-// ===================================================================
-// ANALYTICS — Sesiones y actividad del alumno
-// ===================================================================
 model UserSession {
   id          String    @id @default(uuid())
   userId      String
@@ -927,7 +893,6 @@ model UserSession {
   durationSec Int       @default(0)
   device      String?
   user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, startedAt])
   @@index([startedAt])
 }
@@ -936,18 +901,14 @@ model UserActivity {
   id        String   @id @default(uuid())
   userId    String
   sessionId String?
-  eventType String   // "page_view" | "tool_open"
+  eventType String
   eventData Json?
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId, createdAt])
   @@index([eventType, createdAt])
 }
 
-// ===================================================================
-// NOTIFICACIONES PUSH — Suscripciones y preferencias de recordatorio
-// ===================================================================
 model PushSubscription {
   id         String   @id @default(uuid())
   userId     String
@@ -957,7 +918,6 @@ model PushSubscription {
   userAgent  String?
   createdAt  DateTime @default(now())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   @@index([userId])
 }
 

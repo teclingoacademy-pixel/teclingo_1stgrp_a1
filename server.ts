@@ -157,17 +157,33 @@ app.get("/api/lessons", async (req: Request, res: Response) => {
   }
 });
 
-// 2. Obtener lección por ID
+// 2. Obtener lección por ID — con TODO el contenido pedagógico
 app.get("/api/lessons/:id", async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const lesson = await prisma.lesson.findUnique({
       where: { id },
-      include: { exercises: { where: { active: true }, orderBy: [{ skill: "asc" }, { itemNumber: "asc" }] }, vocabulary: { orderBy: { term: "asc" } } }
+      include: {
+        exercises: {
+          where: { active: true },
+          orderBy: [{ skill: "asc" }, { itemNumber: "asc" }],
+        },
+        vocabulary: { orderBy: { term: "asc" } },
+        texts: { where: { active: true } },
+        teacherScript: true,
+        theorySections: { orderBy: { order: "asc" } },
+        grammarTips: true,
+        quickVocab: { orderBy: { order: "asc" } },
+        curriculum: true,
+        contract: true,
+        knowledgeMap: true,
+      },
     });
-    if (!lesson) return res.status(404).json({ success: false, error: "Lección no encontrada" });
 
-    // Mapeo consistente con /api/lessons (listado)
+    if (!lesson) {
+      return res.status(404).json({ success: false, error: "Lección no encontrada" });
+    }
+
     const mapped = {
       clase_id: lesson.id,
       clase_numero: lesson.order,
@@ -190,11 +206,32 @@ app.get("/api/lessons/:id", async (req: Request, res: Response) => {
         palabra_ingles: v.term,
         palabra_espanol: v.translation,
         categoria: v.type,
-        pronunciacion_af: v.pronunciationAf ?? '',
-        audio_url: '',
-        ejemplo_uso: v.exampleUse ?? '',
+        pronunciacion_af: v.pronunciationAf ?? "",
+        audio_url: "",
+        ejemplo_uso: v.exampleUse ?? "",
         dificultad: 1,
+        tags: v.tags ?? [],
+        tts_text: v.ttsText ?? "",
+        lang: v.lang ?? "en",
       })),
+      texts: lesson.texts ?? [],
+      teacherScript: lesson.teacherScript
+        ? {
+            id: lesson.teacherScript.id,
+            clase_id: lesson.teacherScript.lessonId,
+            titulo: lesson.teacherScript.title,
+            content: lesson.teacherScript.content,
+            contentEn: lesson.teacherScript.contentEn,
+            duration: lesson.teacherScript.duration,
+            updated_at: lesson.teacherScript.updatedAt,
+          }
+        : null,
+      theorySections: lesson.theorySections ?? [],
+      grammarTips: lesson.grammarTips ?? [],
+      quickVocab: lesson.quickVocab ?? [],
+      curriculum: lesson.curriculum ?? null,
+      contract: lesson.contract ?? null,
+      knowledgeMap: lesson.knowledgeMap ?? null,
     };
 
     res.json({ success: true, data: mapped });
@@ -2968,12 +3005,13 @@ app.get("/api/progress/summary", async (req: Request, res: Response) => {
         skillMap[skill].correct++;
       }
     }
-    const bySkill: Record<string, { correct: number; total: number; percent: number }> = {};
+    const bySkill: Record<string, { correct: number; total: number; percent: number; started: boolean }> = {};
     for (const [skill, d] of Object.entries(skillMap)) {
       bySkill[skill] = {
         correct: d.correctUnique.size,
         total: d.total,
         percent: d.total > 0 ? Math.round((d.correctUnique.size / d.total) * 100) : 0,
+        started: d.total > 0,
       };
     }
     res.json({ success: true, data, bySkill, totalSubmissions: subs.length, _debug: { effectiveUserId, candidates } });

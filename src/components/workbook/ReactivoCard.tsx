@@ -187,6 +187,9 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
     // 0. NUEVO (2026-09-25): Si el reactivo trae audioTTS desde Prisma, úsalo directamente.
     //    Cubre LISTEN & SELECT, DICTATION, SHADOWING y cualquier tipo con audio explícito.
     //    Formato esperado: { segments: [{ text: "...", lang: "en", voiceGender: "male" }] }
+    // ═══ FIX 2026-10-05: audioTTS PRIMERO y SIN procesar ═══
+    // Si Prisma ya trae el audio oficial, se devuelve tal cual (frase completa con artículos).
+    // No se le aplica cleanSegment ni sustituciones para no perder palabras cortas como "a"/"an"/"the".
     try {
       const raw = (reactivo as any).audioTTS;
       if (raw) {
@@ -195,6 +198,7 @@ export const ReactivoCard: React.FC<ReactivoCardProps> = ({
           const enSeg = parsed.segments.find((s: any) => s && typeof s.text === 'string' && (s.lang || '').startsWith('en'));
           const first = enSeg || parsed.segments[0];
           if (first && typeof first.text === 'string' && first.text.trim().length > 0) {
+            // ⚠️ NO llamar cleanSegment aquí: borra artículos de 1 letra.
             return first.text.trim();
           }
         }
