@@ -74,10 +74,31 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
   // Referencia al objeto de reconocimiento de voz
   const recognitionRef = useRef<any>(null);
 
-  // La frase objetivo a leer en voz alta es pregunta_texto
+  // ═══ FIX 2026-10-07: SPEAKING solo usa la FRASE, no la orden ═══
   const targetText = React.useMemo(() => {
-    return (reactivo.pregunta_texto || reactivo.respuesta_correcta || '').trim();
-  }, [reactivo.pregunta_texto, reactivo.respuesta_correcta]);
+    try {
+      const raw = (reactivo as any).audioTTS;
+      if (raw) {
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        if (parsed && Array.isArray(parsed.segments) && parsed.segments.length > 0) {
+          const enSeg = parsed.segments.find(
+            (s: any) => s && typeof s.text === 'string' && (s.lang || '').startsWith('en')
+          );
+          const first = enSeg || parsed.segments[0];
+          if (first && typeof first.text === 'string' && first.text.trim().length > 0) {
+            return first.text.trim();
+          }
+        }
+      }
+    } catch {}
+    const correct = (reactivo.respuesta_correcta || '').trim();
+    if (correct) return correct;
+    let q = (reactivo.pregunta_texto || '').trim();
+    q = q.replace(/^(Listen and repeat|Read aloud|Repeat clearly|Repeat|Read|Say|Escucha y repite|Lee en voz alta)[:\s]*/i, '');
+    q = q.replace(/^["\u201C\u201D'](.*)["\u201C\u201D']$/s, '$1').trim();
+    return q;
+  }, [reactivo.pregunta_texto, reactivo.respuesta_correcta, (reactivo as any).audioTTS]);
+
 
   // Limpiar estados cuando cambia el reactivo
   useEffect(() => {
