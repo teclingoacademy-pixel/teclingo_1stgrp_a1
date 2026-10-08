@@ -522,6 +522,31 @@ export const SpeakingExercise: React.FC<SpeakingExerciseProps> = ({
               </>
             )}
           </button>
+
+        {/* ═══ FIX 2026-10-08: BOTÓN SALTAR — solo en estados de fallo ═══ */}
+        {(validationState === 'first_fail' || validationState === 'second_fail') && (
+          <div className="pt-4 mt-2 border-t border-slate-200">
+            <p className="text-[11px] text-slate-400 mb-2">
+              ¿Problemas con el micrófono? Puedes avanzar (contará como error)
+            </p>
+            <button
+              type="button"
+              id="btn-speaking-skip"
+              onClick={() => {
+                onAnswer({
+                  respuesta: '__SKIPPED__',
+                  correcto: false,
+                  tipo: 'speaking',
+                });
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold text-slate-500 hover:text-amber-700 hover:bg-amber-50 border border-transparent hover:border-amber-200 transition-all cursor-pointer"
+              title="Cuenta como error y avanza al siguiente ejercicio"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>Saltar y avanzar</span>
+            </button>
+          </div>
+        )}
         </div>
       </div>
 
